@@ -324,6 +324,12 @@ export function injectable(options: { scope?: Scope } = {}) {
   };
 }
 
+/** Stereotype alias for `@injectable` — marks a service-layer component. */
+export const service = injectable;
+
+/** Stereotype alias for `@injectable` — marks a persistence/DAO component. */
+export const repository = injectable;
+
 /**
  * Method decorator: run this method right after the container constructs the
  * instance (once field initializers have run). Sync hooks run inline; async

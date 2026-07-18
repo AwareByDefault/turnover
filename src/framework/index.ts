@@ -69,7 +69,9 @@ export {
   preDestroy,
   type Provider,
   type ProviderDef,
+  repository,
   type Scope,
+  service,
   type Token,
 } from "./di";
 export {
@@ -137,6 +139,12 @@ export {
   type RequestStore,
   setPrincipal,
 } from "./request";
+export {
+  scheduled,
+  type ScheduledOptions,
+  Scheduler,
+  schedulingProcessor,
+} from "./scheduling";
 export {
   type InferInput,
   type InferOutput,

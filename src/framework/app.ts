@@ -59,6 +59,7 @@ import {
 } from "./openapi";
 import { type RequestState, runInRequest } from "./request";
 import { issuePath, type RouteSchemas, type StandardSchemaV1 } from "./schema";
+import { Scheduler, schedulingProcessor } from "./scheduling";
 
 /** The `Bun.serve` server returned by `App.listen`. */
 type BunServer = ReturnType<typeof Bun.serve>;
@@ -391,6 +392,7 @@ export class App {
   private readonly parsers: BodyParser[] = [];
   private readonly serializers: ResponseSerializer[] = [];
   private server?: BunServer;
+  private readonly scheduler: Scheduler;
 
   /** Register body parser(s), tried by content type before the default. */
   addParser(...parsers: BodyParser[]): this {
@@ -415,8 +417,9 @@ export class App {
     return defaultParseBody(req);
   }
 
-  constructor(container: Container) {
+  constructor(container: Container, scheduler: Scheduler = new Scheduler()) {
     this.container = container;
+    this.scheduler = scheduler;
   }
 
   /**
@@ -483,8 +486,9 @@ export class App {
     return this;
   }
 
-  /** Run `onStop` hooks, stop the server, then run `@preDestroy` on beans. */
+  /** Stop scheduled tasks, run `onStop` hooks, stop the server, run `@preDestroy`. */
   async stop(closeActiveConnections = false): Promise<void> {
+    this.scheduler.stop();
     for (const hook of this.stopHooks) {
       try {
         await hook();
@@ -830,6 +834,7 @@ export class App {
    */
   listen(port = 3000) {
     this.server = Bun.serve({ port, fetch: (req) => this.handle(req) });
+    this.scheduler.start();
     for (const hook of this.startHooks) {
       try {
         const result = hook(this.server);
@@ -948,11 +953,13 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
-  // AOP aspect, event-listener, transaction, cache (outermost), then user ones.
+  const scheduler = new Scheduler();
+  // AOP aspect, event-listener, transaction, cache, scheduling, then user ones.
   container.addPostProcessor(aspectProcessor);
   container.addPostProcessor(eventListenerProcessor(container));
   container.addPostProcessor(transactionalProcessor(container));
   container.addPostProcessor(cacheProcessor(container));
+  container.addPostProcessor(schedulingProcessor(scheduler));
   for (const pp of options.postProcessors ?? []) container.addPostProcessor(pp);
   const activeProfiles = options.profiles ?? envProfiles();
   container.register(ACTIVE_PROFILES, { useValue: activeProfiles });
@@ -961,7 +968,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   }
   // Register providers before mounting so controllers can inject them.
   for (const def of options.providers ?? []) container.register(def.provide, def);
-  const app = new App(container);
+  const app = new App(container, scheduler);
   for (const plugin of options.plugins ?? []) app.register(plugin);
   if (options.onError) app.onError(...asArray(options.onError));
   if (options.onRequest) app.onRequest(...asArray(options.onRequest));

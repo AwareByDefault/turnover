@@ -62,6 +62,7 @@ export const EVENT_LISTENERS = Symbol("aware.eventListeners");
 export const TRANSACTIONAL = Symbol("aware.transactional");
 export const CACHEABLE = Symbol("aware.cacheable");
 export const CACHE_EVICT = Symbol("aware.cacheEvict");
+export const SCHEDULED = Symbol("aware.scheduled");
 
 /** A writable view of a metadata bag. */
 export type MetaBag = Record<PropertyKey, unknown>;

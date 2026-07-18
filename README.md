@@ -196,6 +196,7 @@ optional `scope` (`"singleton"` default, or `"transient"`). Registering a token
 twice **overrides** it for `resolve()` (handy for test mocks) while
 `resolveAll(token)` / `injectAll(token)` return **every** binding (multi-inject).
 Register imperatively too via `app.container.register(token, provider)`.
+`@service()` and `@repository()` are stereotype aliases of `@injectable()`.
 
 **Lifecycle callbacks.** `@postConstruct` runs a method right after a service is
 constructed (async ones are awaited during `createApp`, so the service is ready
@@ -710,6 +711,26 @@ class UsersController {
 const app = await createApp({ controllers: [UsersController], listeners: [Emailer] });
 ```
 
+### Scheduled tasks
+
+`@scheduled({ interval })` runs a service method on a fixed interval while the app
+is listening (started by `listen()`, stopped by `stop()`). `runOnStart: true` also
+runs it once at startup. A failing run is logged, not propagated.
+
+```ts
+@injectable()
+class Reminders {
+  @scheduled({ interval: 60_000, runOnStart: true })
+  async sweep() { /* runs every minute */ }
+}
+
+// list it so it's constructed at boot (unless something else injects it)
+const app = await createApp({ controllers: [...], listeners: [Reminders] });
+app.listen(3000); // scheduled tasks now running
+```
+
+For cron expressions, layer an external cron library over the same methods.
+
 ### Modules
 
 Group controllers into mountable, prefixed units with `@module`, and compose
@@ -834,6 +855,8 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `module`, `ModuleOptions` | composition | Group controllers under a prefix with shared cross-cutting; nestable. |
 | `defineMacro`, `macro`, `MacroHooks`, `MacroFactory` | macros | Named, parameterized, DI-resolvable cross-cutting bundles. |
 | `Events`, `onEvent`, `EventType` | events | In-process publish/subscribe for decoupling. |
+| `scheduled`, `Scheduler`, `ScheduledOptions` | scheduling | Run service methods on a fixed interval. |
+| `service`, `repository` | stereotypes | `@injectable` aliases for service/DAO components. |
 | `Context`, `Ctor`, `HttpMethod` | types | Handler context and shared type aliases. |
 
 ## Project layout
