@@ -232,6 +232,12 @@ them.
 class DebugController { /* mounted only when "dev" is active */ }
 ```
 
+**Post-processors (the AOP seam).** `container.addPostProcessor((instance, token)
+=> …)` (or `createApp({ postProcessors })`) inspects each freshly constructed
+instance and returns it — or a wrapper (e.g. a `Proxy`). Processors chain, and
+the wrapper is cached. This is the low-level hook that method-level advice is
+built on; self-invocation reaches the unwrapped object (as in Spring AOP).
+
 ### Guards & auth
 
 `@use(...guards)` attaches middleware to a whole controller or a single route. A
@@ -661,6 +667,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `InjectionToken`, `Token`, `Provider`, `ProviderDef` | DI providers | Bind tokens to values/classes/factories/aliases; interface + multi-inject. |
 | `postConstruct`, `preDestroy` | DI lifecycle | Per-service init (awaited at bootstrap) + teardown on `app.stop()`. |
 | `Config`, `value`, `requireValue`, `ConfigSource`, `profile` | config | Typed config/env reads + profile-gated mounting. |
+| `PostProcessor`, `Container.addPostProcessor` | AOP seam | Wrap/replace constructed instances (foundation for method advice). |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |

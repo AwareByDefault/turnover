@@ -40,6 +40,13 @@ export type Provider<T> =
 /** A provider paired with the token it provides (for `createApp({ providers })`). */
 export type ProviderDef<T = unknown> = { provide: Token<T> } & Provider<T>;
 
+/**
+ * Inspects each freshly constructed class instance and returns the instance to
+ * use — the same object, or a wrapper (e.g. a `Proxy`). This is the seam that
+ * method-level AOP (advice) is built on. Processors chain in registration order.
+ */
+export type PostProcessor = (instance: object, token: Ctor) => object;
+
 /** A readable name for a token, for error messages. */
 function describe(token: Token): string {
   return typeof token === "function" ? token.name : String(token);
@@ -65,6 +72,14 @@ export class Container {
   private readonly initPromises: Promise<unknown>[] = [];
   // Instances with `@preDestroy` hooks, run in reverse order by `dispose()`.
   private readonly disposables: Array<{ instance: object; methods: PropertyKey[] }> = [];
+  // Hooks that wrap/replace each constructed instance (the AOP seam).
+  private readonly postProcessors: PostProcessor[] = [];
+
+  /** Register a hook that can wrap/replace each constructed instance. */
+  addPostProcessor(processor: PostProcessor): this {
+    this.postProcessors.push(processor);
+    return this;
+  }
 
   /** Bind `provider` to `token`. Repeated calls stack (see `resolveAll`). */
   register<T>(token: Token<T>, provider: Provider<T>): this {
@@ -147,10 +162,19 @@ export class Container {
     const previous = active;
     active = this;
     try {
-      const instance = new token();
+      const instance = new token() as object;
+      // Cache the raw instance first so re-entrant resolution during
+      // construction/init doesn't loop — and, as in Spring AOP, self-invocation
+      // reaches the unwrapped object.
       if (scope === "singleton") this.classSingletons.set(token, instance);
-      this.runLifecycle(instance as object, token);
-      return instance;
+      this.runLifecycle(instance, token);
+
+      let result = instance;
+      for (const processor of this.postProcessors) result = processor(result, token);
+      if (scope === "singleton" && result !== instance) {
+        this.classSingletons.set(token, result); // cache the wrapper
+      }
+      return result as T;
     } finally {
       active = previous;
       this.resolving.delete(token);

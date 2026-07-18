@@ -5,7 +5,7 @@ import {
   CONFIG_SOURCE,
 } from "./config";
 import { Cookies } from "./cookies";
-import { Container, type ProviderDef } from "./di";
+import { Container, type PostProcessor, type ProviderDef } from "./di";
 import {
   HttpError,
   InternalServerError,
@@ -101,6 +101,8 @@ export interface CreateAppOptions {
   config?: ConfigSource | Record<string, string>;
   /** Active profiles for `@profile` gating (defaults from env). */
   profiles?: string[];
+  /** Hooks that wrap/replace each constructed instance (the AOP seam). */
+  postProcessors?: PostProcessor[];
   /** Reuse an existing container. */
   container?: Container;
   /**
@@ -779,6 +781,8 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
+  // Register post-processors before anything is constructed.
+  for (const pp of options.postProcessors ?? []) container.addPostProcessor(pp);
   const activeProfiles = options.profiles ?? envProfiles();
   container.register(ACTIVE_PROFILES, { useValue: activeProfiles });
   if (options.config) {

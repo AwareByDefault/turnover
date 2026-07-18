@@ -30,6 +30,7 @@ export {
   injectOptional,
   InjectionToken,
   postConstruct,
+  type PostProcessor,
   preDestroy,
   type Provider,
   type ProviderDef,
