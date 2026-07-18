@@ -168,6 +168,33 @@ dependencies are detected and throw with a helpful message.
 > `inject()` only works while the container is constructing an
 > `@injectable` / `@controller`. Calling it at module top level throws.
 
+**Providers.** Beyond auto-constructing concrete classes, you can bind a **token**
+to a value, class, factory, or alias — the way to inject interfaces, config,
+third-party objects, or mocks. Non-class dependencies use an `InjectionToken`:
+
+```ts
+import { InjectionToken, createApp } from "../framework";
+
+interface Logger { info(msg: string): void }
+const LOGGER = new InjectionToken<Logger>("Logger");
+
+const app = await createApp({
+  controllers: [...],
+  providers: [
+    { provide: LOGGER, useValue: console },              // a value / mock
+    { provide: Database, useClass: PostgresDatabase },   // bind an interface to an impl
+    { provide: CACHE, useFactory: (c) => new Cache(c.resolve(CONFIG)) }, // built with deps
+    { provide: STORE, useExisting: CACHE },              // alias → same instance
+  ],
+});
+```
+
+Then `inject(LOGGER)` in any controller/service. `useClass`/`useFactory` take an
+optional `scope` (`"singleton"` default, or `"transient"`). Registering a token
+twice **overrides** it for `resolve()` (handy for test mocks) while
+`resolveAll(token)` / `injectAll(token)` return **every** binding (multi-inject).
+Register imperatively too via `app.container.register(token, provider)`.
+
 ### Guards & auth
 
 `@use(...guards)` attaches middleware to a whole controller or a single route. A
@@ -593,7 +620,8 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |
-| `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
+| `injectable`, `inject`, `injectAll`, `Container`, `Scope` | DI | Register and resolve services. |
+| `InjectionToken`, `Token`, `Provider`, `ProviderDef` | DI providers | Bind tokens to values/classes/factories/aliases; interface + multi-inject. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |

@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { Cookies } from "./cookies";
-import { Container } from "./di";
+import { Container, type ProviderDef } from "./di";
 import {
   HttpError,
   InternalServerError,
@@ -89,6 +89,8 @@ export interface CreateAppOptions {
   controllers?: Ctor[];
   /** Mount `@module`-decorated classes (prefix + shared cross-cutting). */
   modules?: Ctor[];
+  /** Bind tokens to providers (`useValue`/`useClass`/`useFactory`/`useExisting`). */
+  providers?: ProviderDef[];
   /** Reuse an existing container. */
   container?: Container;
   /**
@@ -735,6 +737,8 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
+  // Register providers before mounting so controllers can inject them.
+  for (const def of options.providers ?? []) container.register(def.provide, def);
   const app = new App(container);
   for (const plugin of options.plugins ?? []) app.register(plugin);
   if (options.onError) app.onError(...asArray(options.onError));
