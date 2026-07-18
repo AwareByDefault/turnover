@@ -50,6 +50,8 @@ export const CLASS_INTERCEPTORS = Symbol("aware.classInterceptors");
 export const METHOD_INTERCEPTORS = Symbol("aware.methodInterceptors");
 export const CONTROLLER_BASE = Symbol("aware.controllerBase");
 export const MODULE = Symbol("aware.module");
+export const POST_CONSTRUCT = Symbol("aware.postConstruct");
+export const PRE_DESTROY = Symbol("aware.preDestroy");
 
 /** A writable view of a metadata bag. */
 export type MetaBag = Record<PropertyKey, unknown>;

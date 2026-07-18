@@ -18,6 +18,8 @@ export {
   injectable,
   injectAll,
   InjectionToken,
+  postConstruct,
+  preDestroy,
   type Provider,
   type ProviderDef,
   type Scope,

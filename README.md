@@ -195,6 +195,20 @@ twice **overrides** it for `resolve()` (handy for test mocks) while
 `resolveAll(token)` / `injectAll(token)` return **every** binding (multi-inject).
 Register imperatively too via `app.container.register(token, provider)`.
 
+**Lifecycle callbacks.** `@postConstruct` runs a method right after a service is
+constructed (async ones are awaited during `createApp`, so the service is ready
+before you serve); `@preDestroy` runs on `app.stop()`, in reverse construction
+order. Use them to manage resources:
+
+```ts
+@injectable()
+class Db {
+  private pool!: Pool;
+  @postConstruct async connect() { this.pool = await createPool(); }
+  @preDestroy    async close()   { await this.pool.end(); }
+}
+```
+
 ### Guards & auth
 
 `@use(...guards)` attaches middleware to a whole controller or a single route. A
@@ -622,6 +636,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |
 | `injectable`, `inject`, `injectAll`, `Container`, `Scope` | DI | Register and resolve services. |
 | `InjectionToken`, `Token`, `Provider`, `ProviderDef` | DI providers | Bind tokens to values/classes/factories/aliases; interface + multi-inject. |
+| `postConstruct`, `preDestroy` | DI lifecycle | Per-service init (awaited at bootstrap) + teardown on `app.stop()`. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |

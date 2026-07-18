@@ -365,7 +365,7 @@ export class App {
     return this;
   }
 
-  /** Run `onStop` hooks, then stop the server started by `listen()`. */
+  /** Run `onStop` hooks, stop the server, then run `@preDestroy` on beans. */
   async stop(closeActiveConnections = false): Promise<void> {
     for (const hook of this.stopHooks) {
       try {
@@ -375,6 +375,7 @@ export class App {
       }
     }
     await this.server?.stop(closeActiveConnections);
+    await this.container.dispose();
   }
 
   /**
@@ -767,5 +768,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   }
 
   for (const { meta, inherited } of entries) app.mount(meta, inherited);
+  await container.init(); // await async @postConstruct hooks from bootstrap
   return app;
 }

@@ -1,4 +1,11 @@
-import { type Ctor, ctxMeta, metadataOf, SCOPE } from "./metadata";
+import {
+  type Ctor,
+  ctxMeta,
+  metadataOf,
+  POST_CONSTRUCT,
+  PRE_DESTROY,
+  SCOPE,
+} from "./metadata";
 
 export type Scope = "singleton" | "transient";
 
@@ -54,6 +61,10 @@ export class Container {
   private readonly factorySingletons = new Map<object, unknown>();
   private readonly providers = new Map<Token, Provider<unknown>[]>();
   private readonly resolving = new Set<Ctor>();
+  // Promises returned by async `@postConstruct` hooks, awaited by `init()`.
+  private readonly initPromises: Promise<unknown>[] = [];
+  // Instances with `@preDestroy` hooks, run in reverse order by `dispose()`.
+  private readonly disposables: Array<{ instance: object; methods: PropertyKey[] }> = [];
 
   /** Bind `provider` to `token`. Repeated calls stack (see `resolveAll`). */
   register<T>(token: Token<T>, provider: Provider<T>): this {
@@ -128,10 +139,46 @@ export class Container {
     try {
       const instance = new token();
       if (scope === "singleton") this.classSingletons.set(token, instance);
+      this.runLifecycle(instance as object, token);
       return instance;
     } finally {
       active = previous;
       this.resolving.delete(token);
+    }
+  }
+
+  /** Run `@postConstruct` (sync now; async awaited by `init()`) and track `@preDestroy`. */
+  private runLifecycle(instance: object, token: Ctor): void {
+    const bag = metadataOf(token);
+    const postConstructs = bag?.[POST_CONSTRUCT] as PropertyKey[] | undefined;
+    if (postConstructs) {
+      for (const name of postConstructs) {
+        const result = (instance as Record<PropertyKey, () => unknown>)[name]();
+        if (result instanceof Promise) this.initPromises.push(result);
+      }
+    }
+    const preDestroys = bag?.[PRE_DESTROY] as PropertyKey[] | undefined;
+    if (preDestroys) this.disposables.push({ instance, methods: preDestroys });
+  }
+
+  /** Await all async `@postConstruct` hooks run so far (called by `createApp`). */
+  async init(): Promise<void> {
+    while (this.initPromises.length > 0) {
+      await Promise.all(this.initPromises.splice(0));
+    }
+  }
+
+  /** Run every `@preDestroy` hook in reverse construction order (called by `app.stop`). */
+  async dispose(): Promise<void> {
+    const disposables = this.disposables.splice(0).reverse();
+    for (const { instance, methods } of disposables) {
+      for (const name of methods) {
+        try {
+          await (instance as Record<PropertyKey, () => unknown>)[name]();
+        } catch (err) {
+          console.error("[turnover] @preDestroy hook failed:", err);
+        }
+      }
     }
   }
 }
@@ -174,4 +221,35 @@ export function injectable(options: { scope?: Scope } = {}) {
   return (_value: Ctor, context: ClassDecoratorContext): void => {
     ctxMeta(context)[SCOPE] = options.scope ?? "singleton";
   };
+}
+
+/**
+ * Method decorator: run this method right after the container constructs the
+ * instance (once field initializers have run). Sync hooks run inline; async
+ * hooks are awaited at bootstrap via `container.init()` (which `createApp`
+ * calls). Use it for per-service setup (open a pool, warm a cache).
+ */
+export function postConstruct(
+  _value: unknown,
+  context: ClassMethodDecoratorContext
+): void {
+  const meta = ctxMeta(context);
+  const list = (meta[POST_CONSTRUCT] as PropertyKey[] | undefined) ?? [];
+  list.push(context.name);
+  meta[POST_CONSTRUCT] = list;
+}
+
+/**
+ * Method decorator: run this method when the app is stopped (`app.stop()` calls
+ * `container.dispose()`), in reverse construction order. Use it to release
+ * resources (close connections, flush buffers).
+ */
+export function preDestroy(
+  _value: unknown,
+  context: ClassMethodDecoratorContext
+): void {
+  const meta = ctxMeta(context);
+  const list = (meta[PRE_DESTROY] as PropertyKey[] | undefined) ?? [];
+  list.push(context.name);
+  meta[PRE_DESTROY] = list;
 }
