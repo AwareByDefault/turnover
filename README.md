@@ -226,6 +226,61 @@ export const authenticate: Guard = (ctx) => {
 };
 ```
 
+### Error handling
+
+Throw an `HttpError` (or a named subclass) from a handler or guard and the
+framework renders it as a JSON envelope with the right status. Anything that
+isn't an `HttpError` becomes an opaque `500` (its message is never leaked to the
+client) and is logged.
+
+```ts
+import { controller, get, NotFoundError, HttpError } from "../framework";
+
+@controller("/users")
+export class UsersController {
+  @get("/:id")
+  getOne(ctx: Context<{ id: string }>) {
+    const user = this.users.get(ctx.params.id);
+    if (!user) throw new NotFoundError(`No user "${ctx.params.id}"`);
+    // → 404  { "error": { "message": "No user \"…\"" } }
+    return { user };
+  }
+}
+
+// custom status / code / details:
+throw new HttpError(402, "Trial expired", { code: "trial_expired" });
+```
+
+Named subclasses: `BadRequestError` (400), `UnauthorizedError` (401),
+`PaymentRequiredError` (402), `ForbiddenError` (403), `NotFoundError` (404),
+`ConflictError` (409), `GoneError` (410), `UnprocessableEntityError` (422),
+`TooManyRequestsError` (429), `InternalServerError` (500). Extend `HttpError` for
+your own domain errors.
+
+**Custom error handlers** map thrown values to responses. An `ErrorHandler`
+returns a `Response` to handle the error, or nothing to defer to the next handler
+in the chain — **route → controller → global → framework default**:
+
+```ts
+import { catchError, createApp, type ErrorHandler } from "../framework";
+
+const onError: ErrorHandler = (err) => {
+  if (err instanceof MyDomainError) return Response.json({ oops: err.message }, { status: 400 });
+  // return nothing → fall through to the default renderer
+};
+
+// global:
+const app = await createApp({ controllers: [...], onError });
+app.onError(anotherHandler); // or register later
+
+// controller- or route-scoped:
+@controller("/orders")
+@catchError(onError)
+class OrdersController {
+  @get("/:id") @catchError(routeSpecificHandler) getOne() { ... }
+}
+```
+
 ### Auto-discovery
 
 `createApp()` scans the entry file's directory tree (`**/*.ts` via `Bun.Glob`),
@@ -298,6 +353,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `createApp`, `App`, `CreateAppOptions` | bootstrap | Discover controllers, wire DI, build routes, `listen()` or `handle(req)`. |
 | `controller`, `get`, `post`, `put`, `patch`, `del` | decorators | Define a REST controller and its routes. |
 | `use`, `Guard` | middleware | Attach guards to a controller or route. |
+| `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |

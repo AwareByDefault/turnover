@@ -1,15 +1,19 @@
 import { pathToFileURL } from "node:url";
 import { Container } from "./di";
+import { HttpError, NotFoundError, toErrorResponse } from "./error";
 import {
   type Context,
   type ControllerMeta,
+  type ErrorHandler,
   type Guard,
   registeredControllers,
 } from "./http";
 import {
+  CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
   CONTROLLER_BASE,
   type Ctor,
+  METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   metadataOf,
   ROUTES,
@@ -27,6 +31,11 @@ export interface CreateAppOptions {
   controllers?: Ctor[];
   /** Reuse an existing container. */
   container?: Container;
+  /**
+   * Global error handler(s), tried after any route/controller `@catchError`
+   * handlers when a handler or guard throws. See {@link App.onError}.
+   */
+  onError?: ErrorHandler | ErrorHandler[];
 }
 
 /** A request augmented with the path params matched from its route pattern. */
@@ -104,9 +113,47 @@ export class App {
   private readonly staticRoutes = new Map<string, Record<string, RouteHandler>>();
   // Patterns with `:param` segments, matched segment-by-segment.
   private readonly dynamicRoutes: DynamicRoute[] = [];
+  // App-wide error handlers, tried after any route/controller-scoped ones.
+  private readonly errorHandlers: ErrorHandler[] = [];
 
   constructor(container: Container) {
     this.container = container;
+  }
+
+  /**
+   * Register global error handler(s). They run (in registration order) after a
+   * route's/controller's own `@catchError` handlers when a handler or guard
+   * throws, until one returns a `Response`. Returns `this` for chaining.
+   */
+  onError(...handlers: ErrorHandler[]): this {
+    this.errorHandlers.push(...handlers);
+    return this;
+  }
+
+  /**
+   * Run the error-handler chain for a thrown value: scoped handlers first
+   * (route → controller), then the global handlers, then the framework default.
+   * Never throws, so `handle()` always resolves to a `Response`.
+   */
+  private async handleError(
+    err: unknown,
+    ctx: Context,
+    scoped: ErrorHandler[]
+  ): Promise<Response> {
+    for (const handler of [...scoped, ...this.errorHandlers]) {
+      try {
+        const result = await handler(err, ctx);
+        if (result instanceof Response) return result;
+      } catch (rethrown) {
+        // A handler itself threw — render that instead and stop the chain.
+        err = rethrown;
+        break;
+      }
+    }
+    if (!(err instanceof HttpError) && !(err instanceof Response)) {
+      console.error("[turnover] Unhandled error while handling request:", err);
+    }
+    return toErrorResponse(err);
   }
 
   /** Register one handler under a normalized pattern + HTTP method. */
@@ -161,11 +208,21 @@ export class App {
     const methodGuards =
       (bag?.[METHOD_GUARDS] as Map<PropertyKey, Guard[]> | undefined) ??
       new Map<PropertyKey, Guard[]>();
+    const classErrorHandlers =
+      (bag?.[CLASS_ERROR_HANDLERS] as ErrorHandler[] | undefined) ?? [];
+    const methodErrorHandlers =
+      (bag?.[METHOD_ERROR_HANDLERS] as Map<PropertyKey, ErrorHandler[]> | undefined) ??
+      new Map<PropertyKey, ErrorHandler[]>();
 
     for (const { method, path, handlerName } of routes) {
       const pattern = joinPath(meta.base, path);
       const handler = instance[handlerName];
       const guards = [...classGuards, ...(methodGuards.get(handlerName) ?? [])];
+      // Most-specific first: route handlers before controller handlers.
+      const scopedErrorHandlers = [
+        ...(methodErrorHandlers.get(handlerName) ?? []),
+        ...classErrorHandlers,
+      ];
 
       this.addRoute(pattern, method, (req) => {
         const state: RequestState = { req, principal: null };
@@ -185,7 +242,7 @@ export class App {
           } catch (err) {
             // Handlers/guards may `throw` a Response (e.g. Auth.user's 401).
             if (err instanceof Response) return err;
-            throw err;
+            return await this.handleError(err, ctx, scopedErrorHandlers);
           }
         });
       });
@@ -211,14 +268,18 @@ export class App {
       }
     }
 
-    if (!methods) return new Response("Not Found", { status: 404 });
+    if (!methods) {
+      return toErrorResponse(
+        new NotFoundError(`No route for ${req.method} ${path}`)
+      );
+    }
 
     const handler = methods[req.method];
     if (!handler) {
-      return new Response("Method Not Allowed", {
-        status: 405,
-        headers: { Allow: Object.keys(methods).join(", ") },
-      });
+      return Response.json(
+        { error: { message: "Method Not Allowed" } },
+        { status: 405, headers: { Allow: Object.keys(methods).join(", ") } }
+      );
     }
 
     (req as ParamRequest).params = params;
@@ -283,6 +344,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   }
 
   const app = new App(container);
+  if (options.onError) {
+    app.onError(
+      ...(Array.isArray(options.onError) ? options.onError : [options.onError])
+    );
+  }
   for (const meta of metas) app.mount(meta);
   return app;
 }

@@ -1,9 +1,11 @@
 import {
+  CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
   CONTROLLER_BASE,
   type Ctor,
   ctxMeta,
   type HttpMethod,
+  METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   type RouteMeta,
   ROUTES,
@@ -28,6 +30,18 @@ export interface Context<
  */
 // biome-ignore lint/suspicious/noConfusingVoidType: a guard returns nothing (continue) or a Response (short-circuit); void keeps both sync and async no-return guards assignable
 export type Guard = (ctx: Context) => void | Response | Promise<void | Response>;
+
+/**
+ * An error handler. Runs when a route handler or guard throws (anything other
+ * than a `Response`, which short-circuits directly). Return a `Response` to
+ * handle the error, or return nothing to defer to the next handler in the chain
+ * (route → controller → global → the framework default).
+ */
+export type ErrorHandler = (
+  err: unknown,
+  ctx: Context
+  // biome-ignore lint/suspicious/noConfusingVoidType: handled (Response) vs defer (nothing), sync or async
+) => void | Response | Promise<void | Response>;
 
 export interface ControllerMeta {
   target: Ctor;
@@ -102,6 +116,39 @@ export function use(...guards: Guard[]) {
       list.push(...guards);
       map.set(context.name, list);
       meta[METHOD_GUARDS] = map;
+    }
+  };
+}
+
+/**
+ * Attach error handlers to a controller (every route) or a single route. They
+ * run when a handler/guard throws, most-specific first (route → controller →
+ * global), until one returns a `Response`.
+ *
+ * ```ts
+ * @controller("/orders")
+ * @catchError((err) => err instanceof DomainError ? Response.json(...) : undefined)
+ * class OrdersController { ... }
+ * ```
+ */
+export function catchError(...handlers: ErrorHandler[]) {
+  return (
+    _value: unknown,
+    context: ClassDecoratorContext | ClassMethodDecoratorContext
+  ): void => {
+    const meta = ctxMeta(context);
+    if (context.kind === "class") {
+      const list = (meta[CLASS_ERROR_HANDLERS] as ErrorHandler[] | undefined) ?? [];
+      list.push(...handlers);
+      meta[CLASS_ERROR_HANDLERS] = list;
+    } else {
+      const map =
+        (meta[METHOD_ERROR_HANDLERS] as Map<PropertyKey, ErrorHandler[]> | undefined) ??
+        new Map<PropertyKey, ErrorHandler[]>();
+      const list = map.get(context.name) ?? [];
+      list.push(...handlers);
+      map.set(context.name, list);
+      meta[METHOD_ERROR_HANDLERS] = map;
     }
   };
 }
