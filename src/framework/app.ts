@@ -1,4 +1,9 @@
 import { pathToFileURL } from "node:url";
+import {
+  ACTIVE_PROFILES,
+  type ConfigSource,
+  CONFIG_SOURCE,
+} from "./config";
 import { Cookies } from "./cookies";
 import { Container, type ProviderDef } from "./di";
 import {
@@ -32,6 +37,7 @@ import {
   METHOD_INTERCEPTORS,
   metadataOf,
   MODULE,
+  PROFILE,
   ROUTES,
   type RouteMeta,
 } from "./metadata";
@@ -91,6 +97,10 @@ export interface CreateAppOptions {
   modules?: Ctor[];
   /** Bind tokens to providers (`useValue`/`useClass`/`useFactory`/`useExisting`). */
   providers?: ProviderDef[];
+  /** Config source for `Config`/`value()` — a `ConfigSource` or a plain object. */
+  config?: ConfigSource | Record<string, string>;
+  /** Active profiles for `@profile` gating (defaults from env). */
+  profiles?: string[];
   /** Reuse an existing container. */
   container?: Container;
   /**
@@ -689,6 +699,33 @@ function controllerBase(target: Ctor): string {
   return (metadataOf(target)?.[CONTROLLER_BASE] as string | undefined) ?? "";
 }
 
+/** Whether a class's `@profile` (if any) matches the active profiles. */
+function profileActive(target: Ctor, active: ReadonlySet<string>): boolean {
+  const profiles = metadataOf(target)?.[PROFILE] as string[] | undefined;
+  if (!profiles || profiles.length === 0) return true;
+  return profiles.some((name) => active.has(name));
+}
+
+/** Wrap a plain object as a `ConfigSource`, or pass a source through. */
+function toConfigSource(
+  config: ConfigSource | Record<string, string>
+): ConfigSource {
+  if (typeof (config as ConfigSource).get === "function") {
+    return config as ConfigSource;
+  }
+  const record = config as Record<string, string>;
+  return { get: (key) => record[key] };
+}
+
+/** Active profiles from the environment (`TURNOVER_PROFILES`, else `NODE_ENV`). */
+function envProfiles(): string[] {
+  const env = Bun.env as Record<string, string | undefined>;
+  if (env.TURNOVER_PROFILES) {
+    return env.TURNOVER_PROFILES.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return env.NODE_ENV ? [env.NODE_ENV] : [];
+}
+
 /** A controller to mount together with the module context it inherited. */
 interface MountEntry {
   meta: ControllerMeta;
@@ -699,12 +736,14 @@ interface MountEntry {
 function walkModule(
   moduleClass: Ctor,
   parent: InheritedContext,
-  stack: Set<Ctor>
+  stack: Set<Ctor>,
+  active: ReadonlySet<string>
 ): MountEntry[] {
   // `stack` holds the current ancestor chain — skip a module already in it to
   // break import cycles, while still allowing the same module to be mounted
   // under different parents (a legitimate diamond).
   if (stack.has(moduleClass)) return [];
+  if (!profileActive(moduleClass, active)) return []; // gated out by @profile
   stack.add(moduleClass);
 
   const options =
@@ -719,10 +758,12 @@ function walkModule(
 
   const entries: MountEntry[] = [];
   for (const target of options.controllers ?? []) {
-    entries.push({ meta: { target, base: controllerBase(target) }, inherited });
+    if (profileActive(target, active)) {
+      entries.push({ meta: { target, base: controllerBase(target) }, inherited });
+    }
   }
   for (const nested of options.modules ?? []) {
-    entries.push(...walkModule(nested, inherited, stack));
+    entries.push(...walkModule(nested, inherited, stack, active));
   }
 
   stack.delete(moduleClass);
@@ -738,6 +779,11 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
+  const activeProfiles = options.profiles ?? envProfiles();
+  container.register(ACTIVE_PROFILES, { useValue: activeProfiles });
+  if (options.config) {
+    container.register(CONFIG_SOURCE, { useValue: toConfigSource(options.config) });
+  }
   // Register providers before mounting so controllers can inject them.
   for (const def of options.providers ?? []) container.register(def.provide, def);
   const app = new App(container);
@@ -750,20 +796,25 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
 
   const entries: MountEntry[] = [];
   const stack = new Set<Ctor>();
+  const active = new Set(activeProfiles);
   for (const moduleClass of options.modules ?? []) {
-    entries.push(...walkModule(moduleClass, ROOT_CONTEXT, stack));
+    entries.push(...walkModule(moduleClass, ROOT_CONTEXT, stack, active));
   }
   // Explicit controllers mount at the root, isolated from the global registry.
   for (const target of options.controllers ?? []) {
-    entries.push({
-      meta: { target, base: controllerBase(target) },
-      inherited: ROOT_CONTEXT,
-    });
+    if (profileActive(target, active)) {
+      entries.push({
+        meta: { target, base: controllerBase(target) },
+        inherited: ROOT_CONTEXT,
+      });
+    }
   }
   if (!options.modules && !options.controllers) {
     await discover(options.dir ?? entryDir());
     for (const meta of registeredControllers()) {
-      entries.push({ meta, inherited: ROOT_CONTEXT });
+      if (profileActive(meta.target, active)) {
+        entries.push({ meta, inherited: ROOT_CONTEXT });
+      }
     }
   }
 

@@ -10,6 +10,16 @@ export {
   type StopHook,
 } from "./app";
 export { Auth, type Principal, requireAuth } from "./auth";
+export {
+  ACTIVE_PROFILES,
+  Config,
+  CONFIG_SOURCE,
+  type ConfigSource,
+  EnvConfigSource,
+  profile,
+  requireValue,
+  value,
+} from "./config";
 export { type CookieOptions, Cookies } from "./cookies";
 export { cors, type CorsOptions } from "./cors";
 export {
@@ -17,6 +27,7 @@ export {
   inject,
   injectable,
   injectAll,
+  injectOptional,
   InjectionToken,
   postConstruct,
   preDestroy,

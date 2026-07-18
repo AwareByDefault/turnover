@@ -209,6 +209,29 @@ class Db {
 }
 ```
 
+**Configuration.** Read config with the `value()` helper (coerced to the
+fallback's type) or by injecting `Config`. It reads `Bun.env` by default;
+override with `createApp({ config })` (a plain object or a `ConfigSource`):
+
+```ts
+class Server {
+  private port = value("PORT", 3000);     // number, from env or config
+  private debug = value("DEBUG", false);  // boolean
+}
+const app = await createApp({ controllers: [...], config: { PORT: "8080" } });
+// inject(Config).get(key, fallback) / .require(key) / .has(key) too
+```
+
+**Profiles.** Set active profiles with `createApp({ profiles: ["dev"] })` (or
+`TURNOVER_PROFILES` / `NODE_ENV`). `@profile("dev")` mounts a controller or
+module only when one of its profiles is active; `Config.hasProfile(name)` reads
+them.
+
+```ts
+@profile("dev") @controller("/debug")
+class DebugController { /* mounted only when "dev" is active */ }
+```
+
 ### Guards & auth
 
 `@use(...guards)` attaches middleware to a whole controller or a single route. A
@@ -637,6 +660,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `injectable`, `inject`, `injectAll`, `Container`, `Scope` | DI | Register and resolve services. |
 | `InjectionToken`, `Token`, `Provider`, `ProviderDef` | DI providers | Bind tokens to values/classes/factories/aliases; interface + multi-inject. |
 | `postConstruct`, `preDestroy` | DI lifecycle | Per-service init (awaited at bootstrap) + teardown on `app.stop()`. |
+| `Config`, `value`, `requireValue`, `ConfigSource`, `profile` | config | Typed config/env reads + profile-gated mounting. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |

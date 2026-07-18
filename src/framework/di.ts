@@ -98,6 +98,16 @@ export class Container {
     return [];
   }
 
+  /** Resolve a token, or return `fallback` if an InjectionToken is unbound. */
+  resolveOptional<T>(token: Token<T>, fallback: T): T {
+    const bindings = this.providers.get(token);
+    if (bindings && bindings.length > 0) {
+      return this.fromProvider(bindings[bindings.length - 1] as Provider<T>);
+    }
+    if (typeof token === "function") return this.construct(token);
+    return fallback;
+  }
+
   private fromProvider<T>(provider: Provider<T>): T {
     if ("useValue" in provider) return provider.useValue;
     if ("useExisting" in provider) return this.resolve(provider.useExisting);
@@ -214,6 +224,16 @@ export function injectAll<T>(token: Token<T>): T[] {
     );
   }
   return active.resolveAll(token);
+}
+
+/** Like {@link inject}, but returns `fallback` when an InjectionToken is unbound. */
+export function injectOptional<T>(token: Token<T>, fallback: T): T {
+  if (!active) {
+    throw new Error(
+      `injectOptional(${describe(token)}) was called outside an injection context.`
+    );
+  }
+  return active.resolveOptional(token, fallback);
 }
 
 /** Mark a class as injectable, optionally setting its scope (default singleton). */
