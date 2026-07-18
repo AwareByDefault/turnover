@@ -1,0 +1,27 @@
+# Dependabot keeps dependencies and GitHub Actions current.
+version: 2
+updates:
+  # npm (Bun reads the same package.json / lockfile manifests Dependabot updates).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # Roll non-breaking bumps into one PR to keep review/CI noise low.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions pinned in .github/workflows (e.g. oven-sh/setup-bun, actions/*).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types:
+          - "minor"
+          - "patch"

@@ -1,15 +1,303 @@
-# Elysia with Bun runtime
+# turnover
 
-## Getting Started
-To get started with this template, simply paste this command into your terminal:
+**Decorator-first REST framework for Bun** — inject your dependencies, mount
+controllers, and let them rest.
+
+A small, Bun-native REST framework built on **standard TC39 decorators** — no
+`experimentalDecorators`, no `emitDecoratorMetadata`, no Reflect-metadata. It
+gives you `@controller` / `@get` routing, a tiny dependency-injection container,
+and request-scoped auth on top of `Bun.serve`.
+
+## Install
+
 ```bash
-bun create elysia ./elysia-example
+bun add turnover
 ```
 
-## Development
-To start the development server run:
+Define a controller and boot it:
+
+```ts
+// server.ts
+import { controller, createApp, get } from "turnover";
+
+@controller("/hello")
+class HelloController {
+  @get("/")
+  hello() {
+    return { message: "Hello from turnover" };
+  }
+}
+
+const app = await createApp({ controllers: [HelloController] });
+const server = app.listen(3000);
+
+console.log(`🚀 Server running at ${server.url}`);
+```
+
+> Requires [Bun](https://bun.sh) — the framework calls `Bun.serve`, `Bun.Glob`,
+> `Bun.main`, and `Bun.file` directly. Works under the default `tsconfig.json`;
+> no decorator-related compiler flags are needed.
+
+## Running this repo
+
+This repo also ships a runnable demo app in [src/app/](src/app/). Install
+dependencies and start the dev server (hot reload via `--watch`):
+
 ```bash
+bun install
 bun run dev
 ```
 
-Open http://localhost:3000/ with your browser to see the result.
+The server listens on [http://localhost:3000](http://localhost:3000). On boot it
+auto-discovers controllers and prints the route table:
+
+```
+🚀 Server running at http://localhost:3000/
+📍 Routes: { "/users": ["GET","POST"], "/users/:id": ["GET","DELETE"], "/me": ["GET"], ... }
+```
+
+## Concepts
+
+The framework lives in [src/framework/](src/framework/) and is re-exported from a
+single entry point, [src/framework/index.ts](src/framework/index.ts). Your app
+code lives in [src/app/](src/app/). The entry file just boots the app:
+
+```ts
+// src/index.ts
+import { createApp } from "./framework";
+
+const app = await createApp(); // scans the source tree for @controller classes
+const server = app.listen(3000);
+
+console.log(`🚀 Server running at ${server.url}`);
+console.log("📍 Routes:", app.routeTable());
+```
+
+### Controllers & routes
+
+Decorate a class with `@controller("/base")` and its methods with an HTTP-verb
+decorator. Each handler receives a `Context` and returns a value that is coerced
+into a `Response`.
+
+```ts
+import { type Context, controller, del, get, inject, post } from "../framework";
+import { GreetingService } from "./greeting.service";
+
+@controller("/users")
+export class UsersController {
+  private readonly greeter = inject(GreetingService);
+  private readonly users = new Map<string, User>();
+
+  @get("/")
+  list() {
+    return { users: [...this.users.values()] }; // object → JSON
+  }
+
+  @get("/:id")
+  getOne(ctx: Context<{ id: string }>) {
+    const user = this.users.get(ctx.params.id);
+    if (!user) return new Response(`No user "${ctx.params.id}"`, { status: 404 });
+    return { user };
+  }
+
+  @post("/")
+  async create(ctx: Context) {
+    const user = await ctx.body<User>();
+    this.users.set(user.id, user);
+    return Response.json({ created: user }, { status: 201 });
+  }
+
+  @del("/:id")
+  remove(ctx: Context<{ id: string }>) {
+    return { deleted: this.users.delete(ctx.params.id) };
+  }
+}
+```
+
+Route decorators: `@get`, `@post`, `@put`, `@patch`, `@del` (named `del` because
+`delete` is reserved). Paths are joined with the controller base and normalized
+(duplicate and trailing slashes collapsed).
+
+**The `Context` object:**
+
+| Field          | Type                         | Description                                        |
+| -------------- | ---------------------------- | -------------------------------------------------- |
+| `ctx.req`      | `Request`                    | The raw Web `Request`.                             |
+| `ctx.params`   | `Record<string, string>`     | Path params from the pattern (e.g. `/:id`).        |
+| `ctx.query`    | `URLSearchParams`            | Parsed query string.                               |
+| `ctx.body<T>()`| `() => Promise<T>`           | Lazily reads + parses the body (JSON by content-type). |
+
+**Return-value coercion** (in [app.ts](src/framework/app.ts)):
+
+- `Response` → passed through unchanged
+- `string` → `text/plain`
+- `null` / `undefined` → `204 No Content`
+- any other object → JSON
+
+### Dependency injection
+
+Mark a class `@injectable()` and pull it in with `inject(Token)` in a field
+initializer — no constructor, no parameter decorators (standard decorators don't
+have them). The container sets an ambient reference while constructing, which is
+what lets `inject()` resolve.
+
+```ts
+import { injectable } from "../framework";
+
+@injectable() // default scope: "singleton"
+export class GreetingService {
+  private count = 0;
+  greet(name: string) {
+    return `Hello, ${name}! (greeting #${(this.count += 1)})`;
+  }
+}
+```
+
+```ts
+@controller("/users")
+export class UsersController {
+  private readonly greeter = inject(GreetingService); // resolved at construction
+}
+```
+
+Scopes: `"singleton"` (default, cached and shared) or `"transient"` (new instance
+per resolve) via `@injectable({ scope: "transient" })`. Controllers are
+instantiated through the same container, so they can inject services. Circular
+dependencies are detected and throw with a helpful message.
+
+> `inject()` only works while the container is constructing an
+> `@injectable` / `@controller`. Calling it at module top level throws.
+
+### Guards & auth
+
+`@use(...guards)` attaches middleware to a whole controller or a single route. A
+guard returns nothing to continue, or returns/throws a `Response` to
+short-circuit (e.g. a 401/403).
+
+```ts
+import { Auth, controller, get, inject, use } from "../framework";
+import { authenticate, requireRole } from "./auth";
+
+@controller("/me")
+@use(authenticate) // runs before every route in this controller
+export class MeController {
+  private readonly auth = inject(Auth);
+
+  @get("/")
+  whoami() {
+    return this.auth.user; // typed as your app's Principal
+  }
+
+  @get("/admin")
+  @use(requireRole("admin")) // stacks on top of the controller guard
+  adminOnly() {
+    return { secret: `Hello admin ${this.auth.user.name}` };
+  }
+}
+```
+
+Request-scoped state lives in an `AsyncLocalStorage`, so `Auth` can be a plain
+singleton whose getters read the *current* request's principal at call time —
+injecting it into a singleton controller still yields per-request data.
+
+- `Auth.user` — the principal, or throws `401` if unauthenticated
+- `Auth.optional` — the principal or `null`
+- `Auth.isAuthenticated` — boolean
+- `requireAuth` — a ready-made guard that 401s when no principal is set
+
+A guard authenticates by calling `setPrincipal(...)`. Type your user by
+augmenting the framework's empty `Principal` interface (see
+[src/app/auth.ts](src/app/auth.ts)):
+
+```ts
+declare module "../framework/auth" {
+  interface Principal {
+    id: string;
+    name: string;
+    roles: string[];
+  }
+}
+
+export const authenticate: Guard = (ctx) => {
+  const token = ctx.req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const user = token ? USERS[token] : undefined;
+  if (!user) return new Response("Unauthorized", { status: 401 });
+  setPrincipal(user); // now Auth.user resolves to this for the rest of the request
+};
+```
+
+### Auto-discovery
+
+`createApp()` scans the entry file's directory tree (`**/*.ts` via `Bun.Glob`),
+imports any file whose source contains `@controller(`, and each `@controller`
+self-registers as its module loads. No manual controller imports or registration.
+
+To skip the filesystem scan (e.g. for bundling), pass controllers explicitly:
+
+```ts
+import { UsersController } from "./app/users.controller";
+import { MeController } from "./app/me.controller";
+
+const app = await createApp({ controllers: [UsersController, MeController] });
+```
+
+`CreateAppOptions`: `dir` (scan root, defaults to the entry dir), `controllers`
+(explicit list, skips the scan), `container` (reuse an existing `Container`).
+
+## Trying it out
+
+```bash
+# create a user
+curl -X POST localhost:3000/users -H 'content-type: application/json' \
+  -d '{"id":"1","name":"Ada"}'
+
+# list users
+curl localhost:3000/users
+
+# authenticated route (see src/app/auth.ts for the toy token table)
+curl localhost:3000/me -H 'authorization: Bearer alice-token'
+
+# admin-only route
+curl localhost:3000/me/admin -H 'authorization: Bearer alice-token'
+```
+
+## Public API
+
+Everything is exported from [src/framework/index.ts](src/framework/index.ts):
+
+| Export | Kind | Purpose |
+| ------ | ---- | ------- |
+| `createApp`, `App`, `CreateAppOptions` | bootstrap | Discover controllers, wire DI, build routes, `listen()`. |
+| `controller`, `get`, `post`, `put`, `patch`, `del` | decorators | Define a REST controller and its routes. |
+| `use`, `Guard` | middleware | Attach guards to a controller or route. |
+| `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
+| `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
+| `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
+| `Context`, `Ctor`, `HttpMethod` | types | Handler context and shared type aliases. |
+
+## Project layout
+
+```
+src/
+  index.ts              # entry: createApp().listen(3000)
+  framework/            # the framework
+    index.ts            #   public API barrel
+    app.ts              #   createApp, App, discovery, Response coercion
+    http.ts             #   @controller, route decorators, @use, Context
+    di.ts               #   Container, inject(), @injectable
+    auth.ts             #   Auth accessor, Principal, requireAuth
+    request.ts          #   AsyncLocalStorage request scope
+    metadata.ts         #   Symbol.metadata polyfill + shared metadata keys
+  app/                  # the demo app
+    users.controller.ts
+    me.controller.ts
+    greeting.service.ts
+    auth.ts             #   demo authenticate / requireRole guards
+```
+
+## Requirements
+
+- [Bun](https://bun.sh) (uses `Bun.serve`, `Bun.Glob`, `Bun.main`, `Bun.file`).
+- Standard TC39 decorators only — works under the default `tsconfig.json`; no
+  decorator-related compiler flags are enabled.
+```

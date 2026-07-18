@@ -1,0 +1,29 @@
+name: CI
+
+# Lean gate for the framework: typecheck the whole tree and verify the published
+# build compiles. Runs on every PR and on pushes to main. (Lint/test/release
+# automation is deferred — see the plan; this mirrors what package.json scripts
+# actually provide today.)
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to a PR cancels any in-flight run for that ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run build
