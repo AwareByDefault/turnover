@@ -1,5 +1,6 @@
 import {
   CLASS_GUARDS,
+  CONTROLLER_BASE,
   type Ctor,
   ctxMeta,
   type HttpMethod,
@@ -46,7 +47,11 @@ export function registeredControllers(): readonly ControllerMeta[] {
  * relative order of `@controller` and `@use` does not matter.
  */
 export function controller(base = "") {
-  return (value: Ctor, _context: ClassDecoratorContext): void => {
+  return (value: Ctor, context: ClassDecoratorContext): void => {
+    // Record the base on the class metadata too, so a controller can be mounted
+    // from the class alone (explicit `createApp({ controllers })`) without going
+    // through the global discovery registry.
+    ctxMeta(context)[CONTROLLER_BASE] = base;
     controllers.push({ target: value, base });
   };
 }

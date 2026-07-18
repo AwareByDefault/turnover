@@ -8,6 +8,7 @@ import {
 } from "./http";
 import {
   CLASS_GUARDS,
+  CONTROLLER_BASE,
   type Ctor,
   METHOD_GUARDS,
   metadataOf,
@@ -20,24 +21,50 @@ export interface CreateAppOptions {
   /** Directory to scan for `@controller` files. Defaults to the entry's dir. */
   dir?: string;
   /**
-   * Provide controller classes explicitly instead of scanning. Pass the
-   * imported classes (importing them runs their decorators). Bundler-friendly.
+   * Provide controller classes explicitly instead of scanning. Only these are
+   * mounted (handy for tests and bundling); importing them runs their decorators.
    */
   controllers?: Ctor[];
   /** Reuse an existing container. */
   container?: Container;
 }
 
-type BunHandler = (
-  req: Request & { params: Record<string, string> }
-) => Promise<Response>;
+/** A request augmented with the path params matched from its route pattern. */
+type ParamRequest = Request & { params: Record<string, string> };
+type RouteHandler = (req: ParamRequest) => Promise<Response>;
+
+/** One path segment of a route pattern: a literal, or a `:name` capture. */
+type Segment = { literal: string } | { param: string };
+
+/** A route pattern that contains at least one `:param` segment. */
+interface DynamicRoute {
+  segments: Segment[];
+  methods: Record<string, RouteHandler>;
+}
+
+const NO_PARAMS: Record<string, string> = Object.freeze({});
 
 /** Join a controller base and a route path into one normalized pattern. */
 function joinPath(base: string, path: string): string {
-  const joined = `/${base}/${path}`
-    .replace(/\/{2,}/g, "/") // collapse duplicate slashes
-    .replace(/(.+)\/$/, "$1"); // drop trailing slash (except root)
-  return joined || "/";
+  return normalizePath(`/${base}/${path}`);
+}
+
+/** Collapse duplicate slashes and drop the trailing slash (except for root). */
+function normalizePath(path: string): string {
+  const normalized = path.replace(/\/{2,}/g, "/").replace(/(.+)\/$/, "$1");
+  return normalized || "/";
+}
+
+/** Split a normalized path into its non-empty segments. */
+function segmentsOf(path: string): string[] {
+  return path.split("/").filter((s) => s !== "");
+}
+
+/** Compile a pattern's segments into literals and `:param` captures. */
+function compileSegments(pattern: string): Segment[] {
+  return segmentsOf(pattern).map((s) =>
+    s.startsWith(":") ? { param: s.slice(1) } : { literal: s }
+  );
 }
 
 async function parseBody<T>(req: Request): Promise<T> {
@@ -57,16 +84,67 @@ async function parseBody<T>(req: Request): Promise<T> {
 function toResponse(result: unknown): Response {
   if (result instanceof Response) return result;
   if (result == null) return new Response(null, { status: 204 });
-  if (typeof result === "string") return new Response(result);
+  if (typeof result === "string") {
+    // Set the content-type explicitly: Bun only infers it when a string body is
+    // sent over a socket, so setting it here keeps in-memory `handle()` results
+    // identical to what `listen()` serves.
+    return new Response(result, {
+      headers: { "content-type": "text/plain;charset=utf-8" },
+    });
+  }
   return Response.json(result as Record<string, unknown>);
 }
 
 export class App {
   readonly container: Container;
-  private readonly routes: Record<string, Record<string, BunHandler>> = {};
+  // The method table for every mounted pattern, kept for `routeTable()` and to
+  // merge routes that several controllers contribute to the same pattern.
+  private readonly byPattern = new Map<string, Record<string, RouteHandler>>();
+  // Fast path: patterns with no params, matched by exact path.
+  private readonly staticRoutes = new Map<string, Record<string, RouteHandler>>();
+  // Patterns with `:param` segments, matched segment-by-segment.
+  private readonly dynamicRoutes: DynamicRoute[] = [];
 
   constructor(container: Container) {
     this.container = container;
+  }
+
+  /** Register one handler under a normalized pattern + HTTP method. */
+  private addRoute(pattern: string, method: string, handler: RouteHandler): void {
+    let methods = this.byPattern.get(pattern);
+    if (!methods) {
+      methods = {};
+      this.byPattern.set(pattern, methods);
+      if (pattern.includes("/:")) {
+        this.dynamicRoutes.push({ segments: compileSegments(pattern), methods });
+      } else {
+        this.staticRoutes.set(pattern, methods);
+      }
+    }
+    methods[method] = handler;
+  }
+
+  /** Match a path against the dynamic routes, capturing params. */
+  private matchDynamic(
+    path: string
+  ): { methods: Record<string, RouteHandler>; params: Record<string, string> } | null {
+    const parts = segmentsOf(path);
+    for (const route of this.dynamicRoutes) {
+      if (route.segments.length !== parts.length) continue;
+      const params: Record<string, string> = {};
+      let matched = true;
+      for (let i = 0; i < parts.length; i += 1) {
+        const seg = route.segments[i];
+        if ("param" in seg) {
+          params[seg.param] = decodeURIComponent(parts[i]);
+        } else if (seg.literal !== parts[i]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return { methods: route.methods, params };
+    }
+    return null;
   }
 
   /** Instantiate a controller (with DI) and wire its routes + guards. */
@@ -89,9 +167,7 @@ export class App {
       const handler = instance[handlerName];
       const guards = [...classGuards, ...(methodGuards.get(handlerName) ?? [])];
 
-      this.routes[pattern] ??= {};
-      const methods = this.routes[pattern];
-      methods[method] = (req) => {
+      this.addRoute(pattern, method, (req) => {
         const state: RequestState = { req, principal: null };
         return runInRequest(state, async () => {
           const ctx: Context = {
@@ -112,21 +188,59 @@ export class App {
             throw err;
           }
         });
-      };
+      });
     }
+  }
+
+  /**
+   * Handle a Web `Request` and return a `Response`, without opening a socket.
+   * This is the single request path — `listen()` serves through it — so an
+   * in-memory `app.handle(new Request(...))` behaves exactly like a live server.
+   * Ideal for tests and offline tooling (e.g. OpenAPI extraction).
+   */
+  async handle(req: Request): Promise<Response> {
+    const path = normalizePath(new URL(req.url).pathname);
+
+    let methods = this.staticRoutes.get(path);
+    let params = NO_PARAMS;
+    if (!methods) {
+      const match = this.matchDynamic(path);
+      if (match) {
+        methods = match.methods;
+        params = match.params;
+      }
+    }
+
+    if (!methods) return new Response("Not Found", { status: 404 });
+
+    const handler = methods[req.method];
+    if (!handler) {
+      return new Response("Method Not Allowed", {
+        status: 405,
+        headers: { Allow: Object.keys(methods).join(", ") },
+      });
+    }
+
+    (req as ParamRequest).params = params;
+    return handler(req as ParamRequest);
   }
 
   /** A `{ pattern: [methods] }` view of what's mounted — handy for logging. */
   routeTable(): Record<string, string[]> {
     const table: Record<string, string[]> = {};
-    for (const [pattern, methods] of Object.entries(this.routes)) {
+    for (const [pattern, methods] of this.byPattern) {
       table[pattern] = Object.keys(methods);
     }
     return table;
   }
 
+  /**
+   * Start a `Bun.serve` server. Routing goes through `handle()`, so the served
+   * behavior matches in-memory `handle()` exactly. Returns Bun's `Server`
+   * (`.stop()`, `.port`, `.url`, `.reload()`); pass `0` for an OS-assigned port.
+   */
   listen(port = 3000) {
-    return Bun.serve({ port, routes: this.routes as never });
+    return Bun.serve({ port, fetch: (req) => this.handle(req) });
   }
 }
 
@@ -150,14 +264,25 @@ function entryDir(): string {
 /**
  * Create an app: discover controllers (or take them explicitly), instantiate
  * each through the DI container, and build the route table. Call `.listen()` to
- * start a `Bun.serve` server.
+ * start a `Bun.serve` server, or `.handle(req)` to drive it in-memory.
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
-  if (!options.controllers) {
+
+  let metas: ControllerMeta[];
+  if (options.controllers) {
+    // Explicit mode: mount exactly these classes (not the global registry), so
+    // apps and tests are isolated from whatever else has been imported.
+    metas = options.controllers.map((target) => ({
+      target,
+      base: (metadataOf(target)?.[CONTROLLER_BASE] as string | undefined) ?? "",
+    }));
+  } else {
     await discover(options.dir ?? entryDir());
+    metas = [...registeredControllers()];
   }
+
   const app = new App(container);
-  for (const meta of registeredControllers()) app.mount(meta);
+  for (const meta of metas) app.mount(meta);
   return app;
 }

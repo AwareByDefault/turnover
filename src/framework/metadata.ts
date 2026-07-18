@@ -38,6 +38,7 @@ export const SCOPE = Symbol("aware.scope");
 export const ROUTES = Symbol("aware.routes");
 export const CLASS_GUARDS = Symbol("aware.classGuards");
 export const METHOD_GUARDS = Symbol("aware.methodGuards");
+export const CONTROLLER_BASE = Symbol("aware.controllerBase");
 
 /** A writable view of a metadata bag. */
 export type MetaBag = Record<PropertyKey, unknown>;

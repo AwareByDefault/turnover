@@ -232,7 +232,9 @@ export const authenticate: Guard = (ctx) => {
 imports any file whose source contains `@controller(`, and each `@controller`
 self-registers as its module loads. No manual controller imports or registration.
 
-To skip the filesystem scan (e.g. for bundling), pass controllers explicitly:
+To skip the filesystem scan (e.g. for bundling, or in tests), pass controllers
+explicitly — **exactly those** are mounted, isolated from whatever else has been
+imported:
 
 ```ts
 import { UsersController } from "./app/users.controller";
@@ -242,7 +244,33 @@ const app = await createApp({ controllers: [UsersController, MeController] });
 ```
 
 `CreateAppOptions`: `dir` (scan root, defaults to the entry dir), `controllers`
-(explicit list, skips the scan), `container` (reuse an existing `Container`).
+(explicit list — mounts only these and skips the scan), `container` (reuse an
+existing `Container`).
+
+### In-memory requests & testing
+
+`app.handle(request)` runs a single `Request` through the whole pipeline (routing,
+guards, DI, response coercion) and returns a `Response` — **without opening a
+socket**. `listen()` serves through the same method, so an in-memory call behaves
+exactly like a live request. That makes it ideal for tests and offline tooling:
+
+```ts
+const app = await createApp({ controllers: [UsersController] });
+
+const res = await app.handle(new Request("http://local/users/1"));
+expect(res.status).toBe(200);
+expect(await res.json()).toEqual({ user: { id: "1", name: "Ada" } });
+```
+
+`listen(port)` returns Bun's [`Server`](https://bun.sh/docs/api/http) — use
+`.stop()`, `.port`, and `.url` on it directly, and pass `0` for an OS-assigned
+port (handy for parallel test servers):
+
+```ts
+const server = app.listen(0);
+const res = await fetch(`${server.url}users`);
+server.stop();
+```
 
 ## Trying it out
 
@@ -267,7 +295,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 
 | Export | Kind | Purpose |
 | ------ | ---- | ------- |
-| `createApp`, `App`, `CreateAppOptions` | bootstrap | Discover controllers, wire DI, build routes, `listen()`. |
+| `createApp`, `App`, `CreateAppOptions` | bootstrap | Discover controllers, wire DI, build routes, `listen()` or `handle(req)`. |
 | `controller`, `get`, `post`, `put`, `patch`, `del` | decorators | Define a REST controller and its routes. |
 | `use`, `Guard` | middleware | Attach guards to a controller or route. |
 | `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
