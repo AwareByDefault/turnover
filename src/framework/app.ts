@@ -648,6 +648,7 @@ export class App {
           req,
           principal: null,
           store: {} as RequestState["store"],
+          scopeCache: new Map(),
         };
         return runInRequest(state, async () => {
           const validated: ValidatedInputs = {};

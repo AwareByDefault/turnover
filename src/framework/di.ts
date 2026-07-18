@@ -6,8 +6,9 @@ import {
   PRE_DESTROY,
   SCOPE,
 } from "./metadata";
+import { getRequestState } from "./request";
 
-export type Scope = "singleton" | "transient";
+export type Scope = "singleton" | "transient" | "request";
 
 /**
  * A token for a non-class dependency (an interface, a config value, a service
@@ -158,6 +159,10 @@ export class Container {
     const scope =
       scopeOverride ?? (metadataOf(token)?.[SCOPE] as Scope | undefined) ?? "singleton";
 
+    // Request scope: return a proxy that resolves the current request's instance,
+    // so it works even when injected into a longer-lived (singleton) bean.
+    if (scope === "request") return this.requestScopedProxy(token);
+
     if (scope === "singleton") {
       const cached = this.classSingletons.get(token);
       if (cached !== undefined) return cached as T;
@@ -178,7 +183,7 @@ export class Container {
       // construction/init doesn't loop — and, as in Spring AOP, self-invocation
       // reaches the unwrapped object.
       if (scope === "singleton") this.classSingletons.set(token, instance);
-      this.runLifecycle(instance, token);
+      this.runLifecycle(instance, token, scope);
 
       let result = instance;
       for (const processor of this.postProcessors) result = processor(result, token);
@@ -192,18 +197,59 @@ export class Container {
     }
   }
 
-  /** Run `@postConstruct` (sync now; async awaited by `init()`) and track `@preDestroy`. */
-  private runLifecycle(instance: object, token: Ctor): void {
+  /** A proxy delegating to the current request's instance of a request-scoped bean. */
+  private requestScopedProxy<T>(token: Ctor<T>): T {
+    const container = this;
+    return new Proxy(Object.create(null), {
+      get(_target, prop) {
+        const instance = container.currentRequestInstance(token) as Record<PropertyKey, unknown>;
+        const value = instance[prop];
+        return typeof value === "function" ? value.bind(instance) : value;
+      },
+      set(_target, prop, value) {
+        const instance = container.currentRequestInstance(token) as Record<PropertyKey, unknown>;
+        instance[prop] = value;
+        return true;
+      },
+      has(_target, prop) {
+        return prop in (container.currentRequestInstance(token) as object);
+      },
+    }) as T;
+  }
+
+  /** The current request's instance of a request-scoped bean (built + cached once). */
+  private currentRequestInstance<T>(token: Ctor<T>): T {
+    const state = getRequestState();
+    // Outside a request there is nowhere to cache — build a fresh one.
+    if (!state) return this.construct(token, "transient");
+    let instance = state.scopeCache.get(token) as T | undefined;
+    if (instance === undefined) {
+      instance = this.construct(token, "transient");
+      state.scopeCache.set(token, instance);
+    }
+    return instance;
+  }
+
+  /**
+   * Run `@postConstruct` and track `@preDestroy`. App-level tracking (awaiting
+   * async init at bootstrap, disposing at shutdown) applies only to singletons —
+   * transient/request beans are short-lived, so tracking them would leak.
+   */
+  private runLifecycle(instance: object, token: Ctor, scope: Scope): void {
     const bag = metadataOf(token);
     const postConstructs = bag?.[POST_CONSTRUCT] as PropertyKey[] | undefined;
     if (postConstructs) {
       for (const name of postConstructs) {
         const result = (instance as Record<PropertyKey, () => unknown>)[name]();
-        if (result instanceof Promise) this.initPromises.push(result);
+        if (result instanceof Promise && scope === "singleton") {
+          this.initPromises.push(result);
+        }
       }
     }
     const preDestroys = bag?.[PRE_DESTROY] as PropertyKey[] | undefined;
-    if (preDestroys) this.disposables.push({ instance, methods: preDestroys });
+    if (preDestroys && scope === "singleton") {
+      this.disposables.push({ instance, methods: preDestroys });
+    }
   }
 
   /** Await all async `@postConstruct` hooks run so far (called by `createApp`). */

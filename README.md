@@ -160,8 +160,10 @@ export class UsersController {
 }
 ```
 
-Scopes: `"singleton"` (default, cached and shared) or `"transient"` (new instance
-per resolve) via `@injectable({ scope: "transient" })`. Controllers are
+Scopes via `@injectable({ scope })`: `"singleton"` (default, cached and shared),
+`"transient"` (new instance per resolve), or `"request"` (one instance per
+request). A request-scoped bean is injected as a proxy that resolves the current
+request's instance, so it works even inside a singleton. Controllers are
 instantiated through the same container, so they can inject services. Circular
 dependencies are detected and throw with a helpful message.
 

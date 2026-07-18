@@ -21,6 +21,8 @@ export interface RequestState {
   principal: Principal | null;
   /** Per-request values populated by derivers; also exposed as `ctx.store`. */
   store: RequestStore;
+  /** Cache of `scope: "request"` instances, one set per request. */
+  readonly scopeCache: Map<import("./metadata").Ctor, unknown>;
 }
 
 const storage = new AsyncLocalStorage<RequestState>();
