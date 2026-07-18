@@ -49,6 +49,12 @@ export {
   type Token,
 } from "./di";
 export {
+  Events,
+  type EventListener,
+  type EventType,
+  onEvent,
+} from "./events";
+export {
   BadRequestError,
   ConflictError,
   type ErrorBody,

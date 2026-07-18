@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { aspectProcessor } from "./aop";
+import { eventListenerProcessor } from "./events";
 import {
   ACTIVE_PROFILES,
   type ConfigSource,
@@ -107,6 +108,8 @@ export interface CreateAppOptions {
   profiles?: string[];
   /** Hooks that wrap/replace each constructed instance (the AOP seam). */
   postProcessors?: PostProcessor[];
+  /** Classes to construct eagerly at boot (e.g. `@onEvent` listener services). */
+  listeners?: Ctor[];
   /** Reuse an existing container. */
   container?: Container;
   /**
@@ -802,8 +805,9 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
-  // Register the AOP aspect processor first, then any user post-processors.
+  // AOP aspect processor, then event-listener registration, then user ones.
   container.addPostProcessor(aspectProcessor);
+  container.addPostProcessor(eventListenerProcessor(container));
   for (const pp of options.postProcessors ?? []) container.addPostProcessor(pp);
   const activeProfiles = options.profiles ?? envProfiles();
   container.register(ACTIVE_PROFILES, { useValue: activeProfiles });
@@ -845,6 +849,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   }
 
   for (const { meta, inherited } of entries) app.mount(meta, inherited);
+  // Construct listener services so their `@onEvent` methods subscribe.
+  for (const listener of options.listeners ?? []) container.resolve(listener);
   await container.init(); // await async @postConstruct hooks from bootstrap
   return app;
 }

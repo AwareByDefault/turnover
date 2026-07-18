@@ -605,6 +605,35 @@ export class AdminController {
 A macro can contribute any of `use` / `derive` / `intercept` / `catchError`;
 class- and method-level `@macro` both apply, and multiple compose.
 
+### Events
+
+An in-process publish/subscribe bus for decoupling. Inject `Events`, `publish()`
+event objects, and subscribe with `@onEvent(EventType)`. `publish` awaits every
+listener (a failing one is logged, not propagated).
+
+```ts
+class UserCreated { constructor(readonly id: string) {} }
+
+@injectable()
+class Emailer {
+  @onEvent(UserCreated)
+  async welcome(e: UserCreated) { await sendEmail(e.id); }
+}
+
+@controller("/users")
+class UsersController {
+  private events = inject(Events);
+  @post("/") async create(ctx: Context) {
+    const user = await save(await ctx.body());
+    await this.events.publish(new UserCreated(user.id)); // fan out
+    return user;
+  }
+}
+
+// list listener services so they subscribe at boot (if nothing else injects them)
+const app = await createApp({ controllers: [UsersController], listeners: [Emailer] });
+```
+
 ### Modules
 
 Group controllers into mountable, prefixed units with `@module`, and compose
@@ -723,6 +752,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |
 | `module`, `ModuleOptions` | composition | Group controllers under a prefix with shared cross-cutting; nestable. |
 | `defineMacro`, `macro`, `MacroHooks`, `MacroFactory` | macros | Named, parameterized, DI-resolvable cross-cutting bundles. |
+| `Events`, `onEvent`, `EventType` | events | In-process publish/subscribe for decoupling. |
 | `Context`, `Ctor`, `HttpMethod` | types | Handler context and shared type aliases. |
 
 ## Project layout
