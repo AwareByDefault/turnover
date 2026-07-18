@@ -15,6 +15,7 @@ import {
   type RouteMeta,
   ROUTES,
 } from "./metadata";
+import type { OperationMeta } from "./openapi";
 import type { RequestStore } from "./request";
 import type { RouteSchemas } from "./schema";
 
@@ -125,14 +126,25 @@ export function controller(base = "") {
   };
 }
 
+/** Options a route decorator accepts: validation schemas plus OpenAPI metadata. */
+export interface RouteOptions extends RouteSchemas {
+  openapi?: OperationMeta;
+}
+
 function route(method: HttpMethod) {
-  return (path = "", schemas?: RouteSchemas) =>
-    (_value: unknown, context: ClassMethodDecoratorContext): void => {
+  return (path = "", options: RouteOptions = {}) => {
+    const { openapi, ...schemaFields } = options;
+    const schemas =
+      schemaFields.body || schemaFields.query || schemaFields.params || schemaFields.response
+        ? schemaFields
+        : undefined;
+    return (_value: unknown, context: ClassMethodDecoratorContext): void => {
       const meta = ctxMeta(context);
       const routes = (meta[ROUTES] as RouteMeta[] | undefined) ?? [];
-      routes.push({ method, path, handlerName: context.name, schemas });
+      routes.push({ method, path, handlerName: context.name, schemas, openapi });
       meta[ROUTES] = routes;
     };
+  };
 }
 
 export const get = route("GET");

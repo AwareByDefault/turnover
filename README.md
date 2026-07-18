@@ -452,6 +452,40 @@ const app = await createApp({
 `false`. Also supports `methods`, `allowedHeaders`, `exposedHeaders`,
 `credentials`, and `maxAge`.
 
+### OpenAPI
+
+`app.openapi(options)` builds an OpenAPI 3.1 document from the mounted routes —
+paths (with `:param` → `{param}`), methods, path/query parameters, request
+bodies, and responses. Declare per-route metadata via the route decorator's
+`openapi` option.
+
+```ts
+@get("/:id", {
+  params: IdSchema,
+  response: UserSchema,
+  openapi: { summary: "Fetch a user", tags: ["users"] },
+})
+getOne(ctx: Context) { ... }
+```
+
+Because Standard Schema doesn't mandate a JSON-Schema export, pass a
+`toJsonSchema` converter to include schema bodies (TypeBox schemas already *are*
+JSON Schema; Zod via `zod-to-json-schema`):
+
+```ts
+const spec = app.openapi({
+  info: { title: "My API", version: "1.0.0" },
+  toJsonSchema: (s) => convertToJsonSchema(s),
+});
+// serve it however you like, e.g.:
+app.onRequest((req) =>
+  new URL(req.url).pathname === "/openapi.json" ? Response.json(spec) : undefined
+);
+```
+
+Without `toJsonSchema`, the document still lists every path, method, and
+parameter (path params default to `string`).
+
 ### Modules
 
 Group controllers into mountable, prefixed units with `@module`, and compose
@@ -555,6 +589,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `intercept`, `Interceptor` | around advice | Wrap a handler — before/after, transform, short-circuit, catch. |
 | `RequestHook`, `ResponseHook`, `StartHook`, `StopHook`, `Plugin` | lifecycle | `onRequest`/`onResponse` + `onStart`/`onStop` hooks; plugins bundle them. |
 | `cors`, `CorsOptions` | plugin | Built-in CORS (preflight + response headers). |
+| `App.openapi`, `OpenApiOptions`, `OpenApiDocument`, `RouteOptions` | openapi | Generate an OpenAPI 3.1 doc from the routes. |
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |

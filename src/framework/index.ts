@@ -45,11 +45,19 @@ export {
   post,
   put,
   type ResponseState,
+  type RouteOptions,
   use,
   type ValidatedInputs,
 } from "./http";
 export type { Ctor, HttpMethod } from "./metadata";
 export { module, type ModuleOptions } from "./module";
+export type {
+  OpenApiDocument,
+  OpenApiInfo,
+  OpenApiOptions,
+  OpenApiServer,
+  OperationMeta,
+} from "./openapi";
 export {
   getRequestState,
   getRequestStore,

@@ -36,6 +36,12 @@ import {
   type RouteMeta,
 } from "./metadata";
 import type { ModuleOptions } from "./module";
+import {
+  buildOpenApi,
+  type OpenApiDocument,
+  type OpenApiOptions,
+  type OperationRecord,
+} from "./openapi";
 import { type RequestState, runInRequest } from "./request";
 import { issuePath, type RouteSchemas, type StandardSchemaV1 } from "./schema";
 
@@ -295,6 +301,8 @@ export class App {
   private readonly staticRoutes = new Map<string, Record<string, RouteHandler>>();
   // Patterns with `:param` segments, matched segment-by-segment.
   private readonly dynamicRoutes: DynamicRoute[] = [];
+  // Per-route metadata captured for OpenAPI generation.
+  private readonly operations: OperationRecord[] = [];
   // App-wide error handlers, tried after any route/controller-scoped ones.
   private readonly errorHandlers: ErrorHandler[] = [];
   private readonly requestHooks: RequestHook[] = [];
@@ -460,8 +468,9 @@ export class App {
       (bag?.[METHOD_INTERCEPTORS] as Map<PropertyKey, Interceptor[]> | undefined) ??
       new Map<PropertyKey, Interceptor[]>();
 
-    for (const { method, path, handlerName, schemas } of routes) {
+    for (const { method, path, handlerName, schemas, openapi } of routes) {
       const pattern = joinPaths(inherited.prefix, meta.base, path);
+      this.operations.push({ method, pattern, schemas, meta: openapi });
       const handler = instance[handlerName];
       // Broadest-first: module guards, then controller, then route.
       const guards = [
@@ -620,6 +629,16 @@ export class App {
       table[pattern] = Object.keys(methods);
     }
     return table;
+  }
+
+  /**
+   * Build an OpenAPI 3.1 document from the mounted routes. Provide
+   * `options.toJsonSchema` to include body/query/params/response schemas
+   * (Standard Schema doesn't mandate a JSON-Schema export). Serve it however you
+   * like — e.g. `app.onRequest((req) => url==="/openapi.json" ? Response.json(app.openapi()) : undefined)`.
+   */
+  openapi(options?: OpenApiOptions): OpenApiDocument {
+    return buildOpenApi(this.operations, options);
   }
 
   /**

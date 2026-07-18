@@ -33,6 +33,8 @@ export interface RouteMeta {
   handlerName: string | symbol;
   /** Standard Schemas declared on the route decorator, if any. */
   schemas?: import("./schema").RouteSchemas;
+  /** OpenAPI metadata declared on the route decorator, if any. */
+  openapi?: import("./openapi").OperationMeta;
 }
 
 // Keys used inside the shared `context.metadata` bag.
