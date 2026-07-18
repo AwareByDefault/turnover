@@ -1,4 +1,4 @@
-import type { Deriver, ErrorHandler, Guard } from "./http";
+import type { Deriver, ErrorHandler, Guard, Interceptor } from "./http";
 import { ctxMeta, type Ctor, MODULE } from "./metadata";
 
 /**
@@ -17,6 +17,8 @@ export interface ModuleOptions {
   use?: Guard[];
   /** Derivers run before every route in this module (and nested modules). */
   derive?: Deriver[];
+  /** Interceptors wrapping every route in this module (and nested modules). */
+  intercept?: Interceptor[];
   /** Error handlers for every route in this module (and nested modules). */
   catchError?: ErrorHandler[];
 }

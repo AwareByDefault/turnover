@@ -14,6 +14,7 @@ import {
   type Deriver,
   type ErrorHandler,
   type Guard,
+  type Interceptor,
   registeredControllers,
   type ResponseState,
   type ValidatedInputs,
@@ -22,11 +23,13 @@ import {
   CLASS_DERIVERS,
   CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
+  CLASS_INTERCEPTORS,
   CONTROLLER_BASE,
   type Ctor,
   METHOD_DERIVERS,
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
+  METHOD_INTERCEPTORS,
   metadataOf,
   MODULE,
   ROUTES,
@@ -35,6 +38,21 @@ import {
 import type { ModuleOptions } from "./module";
 import { type RequestState, runInRequest } from "./request";
 import { issuePath, type RouteSchemas, type StandardSchemaV1 } from "./schema";
+
+/** The `Bun.serve` server returned by `App.listen`. */
+type BunServer = ReturnType<typeof Bun.serve>;
+
+/** Runs before routing on every request; return a `Response` to short-circuit. */
+export type RequestHook = (
+  req: Request
+  // biome-ignore lint/suspicious/noConfusingVoidType: continue (nothing) vs short-circuit (Response)
+) => void | Response | Promise<void | Response>;
+
+/** Runs once after the server starts listening. */
+export type StartHook = (server: BunServer) => void | Promise<void>;
+
+/** Runs once when the app is stopping (before the server closes). */
+export type StopHook = () => void | Promise<void>;
 
 export interface CreateAppOptions {
   /** Directory to scan for `@controller` files. Defaults to the entry's dir. */
@@ -53,6 +71,12 @@ export interface CreateAppOptions {
    * handlers when a handler or guard throws. See {@link App.onError}.
    */
   onError?: ErrorHandler | ErrorHandler[];
+  /** Hook(s) run before routing on every request. See {@link App.onRequest}. */
+  onRequest?: RequestHook | RequestHook[];
+  /** Hook(s) run once after `listen()`. See {@link App.onStart}. */
+  onStart?: StartHook | StartHook[];
+  /** Hook(s) run once on `stop()`. See {@link App.onStop}. */
+  onStop?: StopHook | StopHook[];
 }
 
 /** A request augmented with the path params matched from its route pattern. */
@@ -80,6 +104,7 @@ interface InheritedContext {
   prefix: string;
   guards: Guard[];
   derivers: Deriver[];
+  interceptors: Interceptor[];
   errorHandlers: ErrorHandler[];
 }
 
@@ -87,6 +112,7 @@ const ROOT_CONTEXT: InheritedContext = {
   prefix: "",
   guards: [],
   derivers: [],
+  interceptors: [],
   errorHandlers: [],
 };
 
@@ -243,6 +269,10 @@ export class App {
   private readonly dynamicRoutes: DynamicRoute[] = [];
   // App-wide error handlers, tried after any route/controller-scoped ones.
   private readonly errorHandlers: ErrorHandler[] = [];
+  private readonly requestHooks: RequestHook[] = [];
+  private readonly startHooks: StartHook[] = [];
+  private readonly stopHooks: StopHook[] = [];
+  private server?: BunServer;
 
   constructor(container: Container) {
     this.container = container;
@@ -256,6 +286,36 @@ export class App {
   onError(...handlers: ErrorHandler[]): this {
     this.errorHandlers.push(...handlers);
     return this;
+  }
+
+  /** Register hook(s) run before routing on every request (e.g. CORS). */
+  onRequest(...hooks: RequestHook[]): this {
+    this.requestHooks.push(...hooks);
+    return this;
+  }
+
+  /** Register hook(s) run once after the server starts listening. */
+  onStart(...hooks: StartHook[]): this {
+    this.startHooks.push(...hooks);
+    return this;
+  }
+
+  /** Register hook(s) run once when the app is stopping. */
+  onStop(...hooks: StopHook[]): this {
+    this.stopHooks.push(...hooks);
+    return this;
+  }
+
+  /** Run `onStop` hooks, then stop the server started by `listen()`. */
+  async stop(closeActiveConnections = false): Promise<void> {
+    for (const hook of this.stopHooks) {
+      try {
+        await hook();
+      } catch (err) {
+        console.error("[turnover] onStop hook failed:", err);
+      }
+    }
+    await this.server?.stop(closeActiveConnections);
   }
 
   /**
@@ -345,6 +405,11 @@ export class App {
     const methodDerivers =
       (bag?.[METHOD_DERIVERS] as Map<PropertyKey, Deriver[]> | undefined) ??
       new Map<PropertyKey, Deriver[]>();
+    const classInterceptors =
+      (bag?.[CLASS_INTERCEPTORS] as Interceptor[] | undefined) ?? [];
+    const methodInterceptors =
+      (bag?.[METHOD_INTERCEPTORS] as Map<PropertyKey, Interceptor[]> | undefined) ??
+      new Map<PropertyKey, Interceptor[]>();
 
     for (const { method, path, handlerName, schemas } of routes) {
       const pattern = joinPaths(inherited.prefix, meta.base, path);
@@ -359,6 +424,12 @@ export class App {
         ...inherited.derivers,
         ...classDerivers,
         ...(methodDerivers.get(handlerName) ?? []),
+      ];
+      // Outermost-first: module interceptors, then controller, then route.
+      const interceptors = [
+        ...inherited.interceptors,
+        ...classInterceptors,
+        ...(methodInterceptors.get(handlerName) ?? []),
       ];
       // Most-specific first: route, then controller, then module.
       const scopedErrorHandlers = [
@@ -404,14 +475,23 @@ export class App {
               const short = await guard(ctx);
               if (short instanceof Response) return short;
             }
-            if (schemas) await validateInputs(schemas, ctx);
-            let result = await handler.call(instance, ctx);
-            if (schemas?.response && !(result instanceof Response)) {
-              result = await validateResponse(schemas.response, result);
-            }
-            return result instanceof Response
-              ? result
-              : toResponse(result, set.status);
+            // Validation + handler + response coercion — the interceptor target.
+            const core = async (): Promise<Response> => {
+              if (schemas) await validateInputs(schemas, ctx);
+              let result = await handler.call(instance, ctx);
+              if (schemas?.response && !(result instanceof Response)) {
+                result = await validateResponse(schemas.response, result);
+              }
+              return result instanceof Response
+                ? result
+                : toResponse(result, set.status);
+            };
+            // Wrap the core with interceptors; the first listed is outermost.
+            const chain = interceptors.reduceRight<() => Promise<Response>>(
+              (next, interceptor) => () => Promise.resolve(interceptor(ctx, next)),
+              core
+            );
+            return chain();
           };
 
           let response: Response;
@@ -438,6 +518,12 @@ export class App {
    * Ideal for tests and offline tooling (e.g. OpenAPI extraction).
    */
   async handle(req: Request): Promise<Response> {
+    // Pre-routing hooks (CORS, logging, …); a returned Response short-circuits.
+    for (const hook of this.requestHooks) {
+      const short = await hook(req);
+      if (short instanceof Response) return short;
+    }
+
     const path = normalizePath(new URL(req.url).pathname);
 
     let methods = this.staticRoutes.get(path);
@@ -483,7 +569,20 @@ export class App {
    * (`.stop()`, `.port`, `.url`, `.reload()`); pass `0` for an OS-assigned port.
    */
   listen(port = 3000) {
-    return Bun.serve({ port, fetch: (req) => this.handle(req) });
+    this.server = Bun.serve({ port, fetch: (req) => this.handle(req) });
+    for (const hook of this.startHooks) {
+      try {
+        const result = hook(this.server);
+        if (result instanceof Promise) {
+          result.catch((err) =>
+            console.error("[turnover] onStart hook failed:", err)
+          );
+        }
+      } catch (err) {
+        console.error("[turnover] onStart hook failed:", err);
+      }
+    }
+    return this.server;
   }
 }
 
@@ -533,6 +632,7 @@ function walkModule(
     prefix: joinPaths(parent.prefix, options.prefix ?? ""),
     guards: [...parent.guards, ...(options.use ?? [])],
     derivers: [...parent.derivers, ...(options.derive ?? [])],
+    interceptors: [...parent.interceptors, ...(options.intercept ?? [])],
     errorHandlers: [...parent.errorHandlers, ...(options.catchError ?? [])],
   };
 
@@ -558,11 +658,11 @@ function walkModule(
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
   const app = new App(container);
-  if (options.onError) {
-    app.onError(
-      ...(Array.isArray(options.onError) ? options.onError : [options.onError])
-    );
-  }
+  const asArray = <T>(v: T | T[]): T[] => (Array.isArray(v) ? v : [v]);
+  if (options.onError) app.onError(...asArray(options.onError));
+  if (options.onRequest) app.onRequest(...asArray(options.onRequest));
+  if (options.onStart) app.onStart(...asArray(options.onStart));
+  if (options.onStop) app.onStop(...asArray(options.onStop));
 
   const entries: MountEntry[] = [];
   const stack = new Set<Ctor>();

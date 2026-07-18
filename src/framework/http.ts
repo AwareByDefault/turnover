@@ -3,6 +3,7 @@ import {
   CLASS_DERIVERS,
   CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
+  CLASS_INTERCEPTORS,
   CONTROLLER_BASE,
   type Ctor,
   ctxMeta,
@@ -10,6 +11,7 @@ import {
   METHOD_DERIVERS,
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
+  METHOD_INTERCEPTORS,
   type RouteMeta,
   ROUTES,
 } from "./metadata";
@@ -84,6 +86,17 @@ export type ErrorHandler = (
 export type Deriver = (
   ctx: Context
 ) => void | Partial<RequestStore> | Promise<void | Partial<RequestStore>>;
+
+/**
+ * An around-advice interceptor. It runs after guards and wraps the handler:
+ * call `next()` to run the rest of the chain (returning its `Response`), with
+ * your own code before and/or after. Skip `next()` to short-circuit, or
+ * transform its result. Interceptors nest — outer ones wrap inner ones.
+ */
+export type Interceptor = (
+  ctx: Context,
+  next: () => Promise<Response>
+) => Response | Promise<Response>;
 
 export interface ControllerMeta {
   target: Ctor;
@@ -224,6 +237,41 @@ export function derive(...derivers: Deriver[]) {
       list.push(...derivers);
       map.set(context.name, list);
       meta[METHOD_DERIVERS] = map;
+    }
+  };
+}
+
+/**
+ * Attach interceptors to a controller (every route) or a single route. They run
+ * after guards and wrap the handler — controller interceptors outside method
+ * ones — each calling `next()` to run the rest of the chain.
+ *
+ * ```ts
+ * @get("/") @intercept(async (ctx, next) => {
+ *   const res = await next();
+ *   res.headers.set("x-timing", "...");
+ *   return res;
+ * }) list() { ... }
+ * ```
+ */
+export function intercept(...interceptors: Interceptor[]) {
+  return (
+    _value: unknown,
+    context: ClassDecoratorContext | ClassMethodDecoratorContext
+  ): void => {
+    const meta = ctxMeta(context);
+    if (context.kind === "class") {
+      const list = (meta[CLASS_INTERCEPTORS] as Interceptor[] | undefined) ?? [];
+      list.push(...interceptors);
+      meta[CLASS_INTERCEPTORS] = list;
+    } else {
+      const map =
+        (meta[METHOD_INTERCEPTORS] as Map<PropertyKey, Interceptor[]> | undefined) ??
+        new Map<PropertyKey, Interceptor[]>();
+      const list = map.get(context.name) ?? [];
+      list.push(...interceptors);
+      map.set(context.name, list);
+      meta[METHOD_INTERCEPTORS] = map;
     }
   };
 }

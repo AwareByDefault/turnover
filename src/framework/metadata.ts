@@ -44,6 +44,8 @@ export const CLASS_ERROR_HANDLERS = Symbol("aware.classErrorHandlers");
 export const METHOD_ERROR_HANDLERS = Symbol("aware.methodErrorHandlers");
 export const CLASS_DERIVERS = Symbol("aware.classDerivers");
 export const METHOD_DERIVERS = Symbol("aware.methodDerivers");
+export const CLASS_INTERCEPTORS = Symbol("aware.classInterceptors");
+export const METHOD_INTERCEPTORS = Symbol("aware.methodInterceptors");
 export const CONTROLLER_BASE = Symbol("aware.controllerBase");
 export const MODULE = Symbol("aware.module");
 

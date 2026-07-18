@@ -1,5 +1,12 @@
 // Public API of the framework.
-export { App, createApp, type CreateAppOptions } from "./app";
+export {
+  App,
+  createApp,
+  type CreateAppOptions,
+  type RequestHook,
+  type StartHook,
+  type StopHook,
+} from "./app";
 export { Auth, type Principal, requireAuth } from "./auth";
 export { type CookieOptions, Cookies } from "./cookies";
 export { Container, inject, injectable, type Scope } from "./di";
@@ -29,6 +36,8 @@ export {
   type ErrorHandler,
   get,
   type Guard,
+  intercept,
+  type Interceptor,
   patch,
   post,
   put,

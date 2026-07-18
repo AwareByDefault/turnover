@@ -383,6 +383,51 @@ class OrdersController {
 }
 ```
 
+### Interceptors (around advice)
+
+`@intercept(...)` wraps a handler — run code **before and after** in one place,
+transform the response, short-circuit, or catch errors. An interceptor gets
+`ctx` and a `next()` that runs the rest of the chain and returns its `Response`.
+
+```ts
+const timing: Interceptor = async (ctx, next) => {
+  const started = performance.now();
+  const res = await next();                    // run the handler
+  res.headers.set("x-response-time", `${performance.now() - started}ms`);
+  return res;                                   // transformed response
+};
+
+@controller("/things")
+@intercept(timing)                              // wraps every route
+class ThingsController {
+  @get("/") @intercept(cacheFor(60)) list() { ... } // stacks; controller is outer
+}
+```
+
+Interceptors nest: controller-level wraps method-level (and a module's wrap
+both). They run **after guards**, around validation + the handler.
+
+### Lifecycle hooks
+
+- `onRequest(req)` runs **before routing** on every request (CORS, logging);
+  return a `Response` to short-circuit.
+- `onStart(server)` runs once after `listen()`; `onStop()` runs on `app.stop()`
+  (which then closes the server).
+
+```ts
+const app = await createApp({
+  controllers: [...],
+  onRequest: [(req) => { /* ... */ }],
+  onStart: [(server) => console.log(`up on ${server.url}`)],
+  onStop: [() => db.close()],
+});
+const server = app.listen(3000);
+// ... later: await app.stop();
+```
+
+Full per-request order: **onRequest → derivers → guards → interceptors (before)
+→ validation → handler → interceptors (after) → response**.
+
 ### Modules
 
 Group controllers into mountable, prefixed units with `@module`, and compose
@@ -483,6 +528,8 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `createApp`, `App`, `CreateAppOptions` | bootstrap | Discover controllers, wire DI, build routes, `listen()` or `handle(req)`. |
 | `controller`, `get`, `post`, `put`, `patch`, `del` | decorators | Define a REST controller and its routes. |
 | `use`, `Guard` | middleware | Attach guards to a controller or route. |
+| `intercept`, `Interceptor` | around advice | Wrap a handler — before/after, transform, short-circuit, catch. |
+| `RequestHook`, `StartHook`, `StopHook` | lifecycle | `onRequest` (pre-routing) + `onStart`/`onStop` hooks. |
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |
