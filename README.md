@@ -384,6 +384,31 @@ export class SessionController {
   outgoing ones (`set` / `delete`); values are URL-encoded. `set.headers` and
   cookies apply to **every** response, including a guard's short-circuit.
 
+### Custom parsing & serialization
+
+By default the body is parsed as JSON (or raw text) and return values are coerced
+(object → JSON, string → text, `Response` passthrough). Register **parsers** and
+**serializers** to change that.
+
+```ts
+const csv: BodyParser = {
+  contentTypes: ["text/csv"],           // exact, `text/*`, or catch-all
+  parse: async (req) => (await req.text()).split(","),
+};
+const envelope: ResponseSerializer = {
+  // return a Response to handle, or undefined to defer to the next / the default
+  serialize: (value) =>
+    value && typeof value === "object" ? Response.json({ data: value }) : undefined,
+};
+
+const app = await createApp({ controllers: [...], parsers: [csv], serializers: [envelope] });
+```
+
+Parsers are chosen by the request's content type (`ctx.body()` uses them);
+serializers get first crack at a non-`Response` return value and can
+content-negotiate (via `ctx`), wrap, or stream (`ReadableStream`). Both can also
+be added by a plugin.
+
 ### Validation
 
 Declare [Standard Schema](https://standardschema.dev)-compatible schemas
@@ -741,6 +766,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |
+| `BodyParser`, `ResponseSerializer` | codecs | Content-negotiated request parsing + response serialization. |
 | `injectable`, `inject`, `injectAll`, `Container`, `Scope` | DI | Register and resolve services. |
 | `InjectionToken`, `Token`, `Provider`, `ProviderDef` | DI providers | Bind tokens to values/classes/factories/aliases; interface + multi-inject. |
 | `postConstruct`, `preDestroy` | DI lifecycle | Per-service init (awaited at bootstrap) + teardown on `app.stop()`. |

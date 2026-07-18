@@ -81,6 +81,24 @@ export type StartHook = (server: BunServer) => void | Promise<void>;
 /** Runs once when the app is stopping (before the server closes). */
 export type StopHook = () => void | Promise<void>;
 
+/** Parses a request body for one or more content types. */
+export interface BodyParser {
+  /** Media types this parser handles — exact, a subtype wildcard, or catch-all. */
+  contentTypes: string[];
+  parse(req: Request): unknown | Promise<unknown>;
+}
+
+/**
+ * Serializes a non-`Response` handler return value into a `Response`, or returns
+ * `undefined` to defer to the next serializer (and finally the JSON default).
+ */
+export interface ResponseSerializer {
+  serialize(
+    value: unknown,
+    ctx: Context
+  ): Response | undefined | Promise<Response | undefined>;
+}
+
 /** A bundle of hooks registered together (e.g. what `cors()` returns). */
 export interface Plugin {
   onRequest?: RequestHook | RequestHook[];
@@ -88,6 +106,8 @@ export interface Plugin {
   onStart?: StartHook | StartHook[];
   onStop?: StopHook | StopHook[];
   onError?: ErrorHandler | ErrorHandler[];
+  parsers?: BodyParser[];
+  serializers?: ResponseSerializer[];
 }
 
 export interface CreateAppOptions {
@@ -127,6 +147,10 @@ export interface CreateAppOptions {
   onStop?: StopHook | StopHook[];
   /** Plugins (hook bundles) to register, e.g. `cors(...)`. */
   plugins?: Plugin[];
+  /** Body parsers, tried by content type before the JSON/text default. */
+  parsers?: BodyParser[];
+  /** Response serializers, tried before the JSON default. */
+  serializers?: ResponseSerializer[];
 }
 
 /** A request augmented with the path params matched from its route pattern. */
@@ -184,17 +208,25 @@ function compileSegments(pattern: string): Segment[] {
   );
 }
 
-async function parseBody<T>(req: Request): Promise<T> {
+/** The built-in body parser: JSON by content-type, otherwise the raw text. */
+async function defaultParseBody(req: Request): Promise<unknown> {
   const raw = await req.text();
-  if (raw === "") return undefined as T;
+  if (raw === "") return undefined;
   if ((req.headers.get("content-type") ?? "").includes("application/json")) {
     try {
-      return JSON.parse(raw) as T;
+      return JSON.parse(raw);
     } catch {
-      return raw as T;
+      return raw;
     }
   }
-  return raw as T;
+  return raw;
+}
+
+/** Match a media-type pattern — exact, a subtype wildcard, or catch-all — to a value. */
+function matchMediaType(pattern: string, contentType: string): boolean {
+  if (pattern === "*/*" || pattern === contentType) return true;
+  if (pattern.endsWith("/*")) return contentType.startsWith(pattern.slice(0, -1));
+  return false;
 }
 
 /** Turn a handler's return value into a Response, honoring `ctx.set.status`. */
@@ -330,7 +362,32 @@ export class App {
   private readonly responseHooks: ResponseHook[] = [];
   private readonly startHooks: StartHook[] = [];
   private readonly stopHooks: StopHook[] = [];
+  private readonly parsers: BodyParser[] = [];
+  private readonly serializers: ResponseSerializer[] = [];
   private server?: BunServer;
+
+  /** Register body parser(s), tried by content type before the default. */
+  addParser(...parsers: BodyParser[]): this {
+    this.parsers.push(...parsers);
+    return this;
+  }
+
+  /** Register response serializer(s), tried before the JSON default. */
+  addSerializer(...serializers: ResponseSerializer[]): this {
+    this.serializers.push(...serializers);
+    return this;
+  }
+
+  /** Parse a request body via the registered parsers, else the built-in default. */
+  private parseBody(req: Request): unknown | Promise<unknown> {
+    const contentType = (req.headers.get("content-type") ?? "").split(";")[0].trim();
+    for (const parser of this.parsers) {
+      if (parser.contentTypes.some((ct) => matchMediaType(ct, contentType))) {
+        return parser.parse(req);
+      }
+    }
+    return defaultParseBody(req);
+  }
 
   constructor(container: Container) {
     this.container = container;
@@ -369,6 +426,8 @@ export class App {
     if (plugin.onStart) this.onStart(...asArray(plugin.onStart));
     if (plugin.onStop) this.onStop(...asArray(plugin.onStop));
     if (plugin.onError) this.onError(...asArray(plugin.onError));
+    if (plugin.parsers) this.addParser(...plugin.parsers);
+    if (plugin.serializers) this.addSerializer(...plugin.serializers);
     return this;
   }
 
@@ -558,7 +617,7 @@ export class App {
             store: state.store, // same object, so getRequestStore() sees writes
             // Cache the parse so validation and the handler read the body once.
             body: <T = unknown>() =>
-              (bodyPromise ??= parseBody<unknown>(req)) as Promise<T>,
+              (bodyPromise ??= Promise.resolve(this.parseBody(req))) as Promise<T>,
           };
 
           // Derivers populate ctx.store, then guards (auth), then validation —
@@ -575,13 +634,18 @@ export class App {
             // Validation + handler + response coercion — the interceptor target.
             const core = async (): Promise<Response> => {
               if (schemas) await validateInputs(schemas, ctx);
-              let result = await handler.call(instance, ctx);
-              if (schemas?.response && !(result instanceof Response)) {
-                result = await validateResponse(schemas.response, result);
+              const result = await handler.call(instance, ctx);
+              if (result instanceof Response) return result;
+              const validated2 =
+                schemas?.response !== undefined
+                  ? await validateResponse(schemas.response, result)
+                  : result;
+              // Custom serializers get first crack; else the JSON/text default.
+              for (const serializer of this.serializers) {
+                const serialized = await serializer.serialize(validated2, ctx);
+                if (serialized instanceof Response) return serialized;
               }
-              return result instanceof Response
-                ? result
-                : toResponse(result, set.status);
+              return toResponse(validated2, set.status);
             };
             // Wrap the core with interceptors; the first listed is outermost.
             const chain = interceptors.reduceRight<() => Promise<Response>>(
@@ -823,6 +887,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   if (options.onResponse) app.onResponse(...asArray(options.onResponse));
   if (options.onStart) app.onStart(...asArray(options.onStart));
   if (options.onStop) app.onStop(...asArray(options.onStop));
+  if (options.parsers) app.addParser(...options.parsers);
+  if (options.serializers) app.addSerializer(...options.serializers);
 
   const entries: MountEntry[] = [];
   const stack = new Set<Ctor>();

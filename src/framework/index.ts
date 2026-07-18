@@ -1,11 +1,13 @@
 // Public API of the framework.
 export {
   App,
+  type BodyParser,
   createApp,
   type CreateAppOptions,
   type Plugin,
   type RequestHook,
   type ResponseHook,
+  type ResponseSerializer,
   type StartHook,
   type StopHook,
 } from "./app";
