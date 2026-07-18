@@ -226,6 +226,40 @@ export const authenticate: Guard = (ctx) => {
 };
 ```
 
+### Validation
+
+Declare [Standard Schema](https://standardschema.dev)-compatible schemas
+(Zod, Valibot, ArkType, TypeBox with its adapter, …) on a route to validate its
+`body`, `query`, `params`, and `response`. turnover takes **no dependency** on any
+validator — it only speaks the Standard Schema interface.
+
+```ts
+import { z } from "zod";
+import { controller, post, type Context } from "../framework";
+
+const CreateUser = z.object({ name: z.string(), age: z.coerce.number() });
+
+@controller("/users")
+export class UsersController {
+  @post("/", { body: CreateUser })
+  create(ctx: Context) {
+    const user = ctx.valid.body as z.infer<typeof CreateUser>;
+    return { created: user }; // age has been coerced to a number
+  }
+}
+```
+
+Validated (and coerced) values land on `ctx.valid.body` / `ctx.valid.query` /
+`ctx.valid.params`. Because standard decorators can't flow the schema's type onto
+the handler signature, cast `ctx.valid.*` to the schema's output type (or use
+`InferOutput<typeof Schema>`). `ctx.body()` still returns the *raw* body.
+
+- A failed input validation throws a **`422`** whose body pinpoints the failure:
+  `{ error: { code: "validation_failed", details: { location, issues } } }`.
+- A failed **`response`** validation is treated as a server bug — logged, returned
+  as an opaque `500`.
+- Validation runs **after guards** (so auth rejects before input is inspected).
+
 ### Error handling
 
 Throw an `HttpError` (or a named subclass) from a handler or guard and the
@@ -354,6 +388,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `controller`, `get`, `post`, `put`, `patch`, `del` | decorators | Define a REST controller and its routes. |
 | `use`, `Guard` | middleware | Attach guards to a controller or route. |
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
+| `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |

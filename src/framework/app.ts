@@ -1,12 +1,19 @@
 import { pathToFileURL } from "node:url";
 import { Container } from "./di";
-import { HttpError, NotFoundError, toErrorResponse } from "./error";
+import {
+  HttpError,
+  InternalServerError,
+  NotFoundError,
+  toErrorResponse,
+  UnprocessableEntityError,
+} from "./error";
 import {
   type Context,
   type ControllerMeta,
   type ErrorHandler,
   type Guard,
   registeredControllers,
+  type ValidatedInputs,
 } from "./http";
 import {
   CLASS_ERROR_HANDLERS,
@@ -20,6 +27,7 @@ import {
   type RouteMeta,
 } from "./metadata";
 import { type RequestState, runInRequest } from "./request";
+import { issuePath, type RouteSchemas, type StandardSchemaV1 } from "./schema";
 
 export interface CreateAppOptions {
   /** Directory to scan for `@controller` files. Defaults to the entry's dir. */
@@ -102,6 +110,77 @@ function toResponse(result: unknown): Response {
     });
   }
   return Response.json(result as Record<string, unknown>);
+}
+
+/** Flatten a query string into an object (repeated keys become arrays). */
+function queryToObject(params: URLSearchParams): Record<string, string | string[]> {
+  const obj: Record<string, string | string[]> = {};
+  for (const key of new Set(params.keys())) {
+    const all = params.getAll(key);
+    obj[key] = all.length > 1 ? all : all[0];
+  }
+  return obj;
+}
+
+/**
+ * Validate one input against a schema, returning the validated (possibly
+ * coerced) output, or throwing a `422` whose details point at `location`.
+ */
+async function checkInput(
+  schema: StandardSchemaV1,
+  value: unknown,
+  location: "body" | "query" | "params"
+): Promise<unknown> {
+  const result = await schema["~standard"].validate(value);
+  if (result.issues) {
+    throw new UnprocessableEntityError("Validation failed", {
+      code: "validation_failed",
+      details: {
+        location,
+        issues: result.issues.map((issue) => ({
+          message: issue.message,
+          path: issuePath(issue),
+        })),
+      },
+    });
+  }
+  return result.value;
+}
+
+/** Validate each declared input schema and populate `ctx.valid`. */
+async function validateInputs(
+  schemas: RouteSchemas,
+  ctx: Context
+): Promise<void> {
+  if (schemas.params) {
+    ctx.valid.params = await checkInput(schemas.params, ctx.params, "params");
+  }
+  if (schemas.query) {
+    ctx.valid.query = await checkInput(
+      schemas.query,
+      queryToObject(ctx.query),
+      "query"
+    );
+  }
+  if (schemas.body) {
+    ctx.valid.body = await checkInput(schemas.body, await ctx.body(), "body");
+  }
+}
+
+/**
+ * Validate a handler's return value against the response schema. A mismatch is
+ * a server bug, so it logs and raises a `500` (details are not sent to clients).
+ */
+async function validateResponse(
+  schema: StandardSchemaV1,
+  value: unknown
+): Promise<unknown> {
+  const result = await schema["~standard"].validate(value);
+  if (result.issues) {
+    console.error("[turnover] Response validation failed:", result.issues);
+    throw new InternalServerError();
+  }
+  return result.value;
 }
 
 export class App {
@@ -214,7 +293,7 @@ export class App {
       (bag?.[METHOD_ERROR_HANDLERS] as Map<PropertyKey, ErrorHandler[]> | undefined) ??
       new Map<PropertyKey, ErrorHandler[]>();
 
-    for (const { method, path, handlerName } of routes) {
+    for (const { method, path, handlerName, schemas } of routes) {
       const pattern = joinPath(meta.base, path);
       const handler = instance[handlerName];
       const guards = [...classGuards, ...(methodGuards.get(handlerName) ?? [])];
@@ -227,18 +306,29 @@ export class App {
       this.addRoute(pattern, method, (req) => {
         const state: RequestState = { req, principal: null };
         return runInRequest(state, async () => {
+          const validated: ValidatedInputs = {};
+          let bodyPromise: Promise<unknown> | undefined;
           const ctx: Context = {
             req,
             params: req.params ?? {},
             query: new URL(req.url).searchParams,
-            body: <T = unknown>() => parseBody<T>(req),
+            valid: validated,
+            // Cache the parse so validation and the handler read the body once.
+            body: <T = unknown>() =>
+              (bodyPromise ??= parseBody<unknown>(req)) as Promise<T>,
           };
           try {
+            // Guards (auth) run before validation, mirroring Nest's order.
             for (const guard of guards) {
               const short = await guard(ctx);
               if (short instanceof Response) return short;
             }
-            return toResponse(await handler.call(instance, ctx));
+            if (schemas) await validateInputs(schemas, ctx);
+            let result = await handler.call(instance, ctx);
+            if (schemas?.response && !(result instanceof Response)) {
+              result = await validateResponse(schemas.response, result);
+            }
+            return toResponse(result);
           } catch (err) {
             // Handlers/guards may `throw` a Response (e.g. Auth.user's 401).
             if (err instanceof Response) return err;

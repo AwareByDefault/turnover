@@ -10,6 +10,7 @@ import {
   type RouteMeta,
   ROUTES,
 } from "./metadata";
+import type { RouteSchemas } from "./schema";
 
 /** Per-request context passed to every route handler. */
 export interface Context<
@@ -20,8 +21,22 @@ export interface Context<
   readonly params: Params;
   /** Parsed query string. */
   readonly query: URLSearchParams;
-  /** Lazily read + parse the body (JSON when the content-type says so). */
+  /** Lazily read + parse the raw body (JSON when the content-type says so). */
   body<T = unknown>(): Promise<T>;
+  /**
+   * Validated inputs, populated for whichever of `body`/`query`/`params` the
+   * route declared a schema for. Each is the schema's *output* type — cast to it
+   * (e.g. `ctx.valid.body as CreateUser`), since standard decorators can't flow
+   * the schema's type onto the handler signature.
+   */
+  readonly valid: ValidatedInputs;
+}
+
+/** Validated request inputs; a field is set only when its schema is declared. */
+export interface ValidatedInputs {
+  body?: unknown;
+  query?: unknown;
+  params?: unknown;
 }
 
 /**
@@ -71,11 +86,11 @@ export function controller(base = "") {
 }
 
 function route(method: HttpMethod) {
-  return (path = "") =>
+  return (path = "", schemas?: RouteSchemas) =>
     (_value: unknown, context: ClassMethodDecoratorContext): void => {
       const meta = ctxMeta(context);
       const routes = (meta[ROUTES] as RouteMeta[] | undefined) ?? [];
-      routes.push({ method, path, handlerName: context.name });
+      routes.push({ method, path, handlerName: context.name, schemas });
       meta[ROUTES] = routes;
     };
 }

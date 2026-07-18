@@ -31,6 +31,8 @@ export interface RouteMeta {
   method: HttpMethod;
   path: string;
   handlerName: string | symbol;
+  /** Standard Schemas declared on the route decorator, if any. */
+  schemas?: import("./schema").RouteSchemas;
 }
 
 // Keys used inside the shared `context.metadata` bag.
