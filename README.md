@@ -630,6 +630,28 @@ app.onRequest((req) =>
 Without `toJsonSchema`, the document still lists every path, method, and
 parameter (path params default to `string`).
 
+### Typed client
+
+`createClient<paths>(config)` is a minimal, dependency-free typed HTTP client
+driven by an `openapi-typescript`-generated `paths` type — the codegen-based
+end-to-end type safety (Turnover can't infer client types through decorators).
+
+```ts
+// 1. dump the spec:  Bun.write("openapi.json", JSON.stringify(app.openapi({ toJsonSchema })))
+// 2. generate types: bunx openapi-typescript openapi.json -o api.d.ts
+import type { paths } from "./api";
+import { createClient } from "turnover";
+
+const api = createClient<paths>({ baseUrl: "https://api.example.com" });
+
+const { data, error } = await api.get("/users/{id}", { params: { path: { id: "1" } } });
+//      ^ typed as the route's response       ^ path/query/body are typed & checked
+await api.post("/users", { body: { name: "Ada" } });
+```
+
+Options are required only when a route has path params or a body. Pass
+`fetch: app.handle` to drive an app in-memory (great for tests).
+
 ### Macros
 
 A macro is a **named, parameterized, DI-resolvable bundle** of cross-cutting —
@@ -792,6 +814,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `RequestHook`, `ResponseHook`, `StartHook`, `StopHook`, `Plugin` | lifecycle | `onRequest`/`onResponse` + `onStart`/`onStop` hooks; plugins bundle them. |
 | `cors`, `CorsOptions` | plugin | Built-in CORS (preflight + response headers). |
 | `App.openapi`, `OpenApiOptions`, `OpenApiDocument`, `RouteOptions` | openapi | Generate an OpenAPI 3.1 doc from the routes. |
+| `createClient`, `Client`, `ClientConfig`, `ClientResult` | typed client | Typed HTTP client from an `openapi-typescript` `paths` type. |
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |

@@ -49,6 +49,12 @@ export {
   requireValue,
   value,
 } from "./config";
+export {
+  type Client,
+  type ClientConfig,
+  type ClientResult,
+  createClient,
+} from "./client";
 export { type CookieOptions, Cookies } from "./cookies";
 export { cors, type CorsOptions } from "./cors";
 export {
