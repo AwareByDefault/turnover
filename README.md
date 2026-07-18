@@ -238,6 +238,26 @@ instance and returns it — or a wrapper (e.g. a `Proxy`). Processors chain, and
 the wrapper is cached. This is the low-level hook that method-level advice is
 built on; self-invocation reaches the unwrapped object (as in Spring AOP).
 
+**Method advice (`@before` / `@after` / `@around`).** Wrap *any* injectable
+service method — not just HTTP handlers — with cross-cutting logic (logging,
+caching, retry, timing). `@around` receives a join point and calls `proceed()`:
+
+```ts
+@injectable()
+class Orders {
+  @before((jp) => console.log(`→ ${jp.method}`, jp.args))
+  @around((jp) => { const t = performance.now(); const r = jp.proceed();
+                    console.log(`${jp.method} took ${performance.now() - t}ms`); return r; })
+  place(order: Order) { /* ... */ }
+}
+```
+
+`@before` runs first, `@around` wraps the call (top-most is outermost, and may
+transform args/result, short-circuit, or catch), `@after` runs last (awaiting
+async methods). Advice applies to calls made through the injected instance;
+self-invocation bypasses it (Spring's proxy semantics). `createApp`
+auto-registers the aspect processor.
+
 ### Guards & auth
 
 `@use(...guards)` attaches middleware to a whole controller or a single route. A
@@ -668,6 +688,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `postConstruct`, `preDestroy` | DI lifecycle | Per-service init (awaited at bootstrap) + teardown on `app.stop()`. |
 | `Config`, `value`, `requireValue`, `ConfigSource`, `profile` | config | Typed config/env reads + profile-gated mounting. |
 | `PostProcessor`, `Container.addPostProcessor` | AOP seam | Wrap/replace constructed instances (foundation for method advice). |
+| `before`, `after`, `around`, `JoinPoint`, `ProceedingJoinPoint` | method AOP | Advise any injectable service method. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |

@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { aspectProcessor } from "./aop";
 import {
   ACTIVE_PROFILES,
   type ConfigSource,
@@ -781,7 +782,8 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
-  // Register post-processors before anything is constructed.
+  // Register the AOP aspect processor first, then any user post-processors.
+  container.addPostProcessor(aspectProcessor);
   for (const pp of options.postProcessors ?? []) container.addPostProcessor(pp);
   const activeProfiles = options.profiles ?? envProfiles();
   container.register(ACTIVE_PROFILES, { useValue: activeProfiles });

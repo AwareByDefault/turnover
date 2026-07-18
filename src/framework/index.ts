@@ -9,6 +9,17 @@ export {
   type StartHook,
   type StopHook,
 } from "./app";
+export {
+  after,
+  type AfterAdvice,
+  around,
+  type AroundAdvice,
+  aspectProcessor,
+  before,
+  type BeforeAdvice,
+  type JoinPoint,
+  type ProceedingJoinPoint,
+} from "./aop";
 export { Auth, type Principal, requireAuth } from "./auth";
 export {
   ACTIVE_PROFILES,
