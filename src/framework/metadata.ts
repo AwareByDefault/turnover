@@ -45,6 +45,7 @@ export const METHOD_ERROR_HANDLERS = Symbol("aware.methodErrorHandlers");
 export const CLASS_DERIVERS = Symbol("aware.classDerivers");
 export const METHOD_DERIVERS = Symbol("aware.methodDerivers");
 export const CONTROLLER_BASE = Symbol("aware.controllerBase");
+export const MODULE = Symbol("aware.module");
 
 /** A writable view of a metadata bag. */
 export type MetaBag = Record<PropertyKey, unknown>;

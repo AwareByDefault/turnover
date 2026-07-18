@@ -383,6 +383,34 @@ class OrdersController {
 }
 ```
 
+### Modules
+
+Group controllers into mountable, prefixed units with `@module`, and compose
+them (including nesting) into an app. A module shares a `prefix` and its
+cross-cutting concerns — `use` (guards), `derive`, `catchError` — with every
+controller it mounts, and with any nested `modules`.
+
+```ts
+import { module, createApp } from "../framework";
+
+@module({
+  prefix: "/admin",
+  use: [authenticate],                    // guards for every route below
+  derive: [(ctx) => ({ tenant: tenantOf(ctx) })],
+  controllers: [UsersController, RolesController],
+  modules: [BillingModule],               // nested; inherits /admin + the guard
+})
+class AdminModule {}
+
+const app = await createApp({ modules: [AdminModule] });
+// GET /admin/users, /admin/roles, /admin/billing/... — all behind `authenticate`
+```
+
+Prefixes compose across nesting (`/admin` + `/billing` + a controller's base).
+Modules and explicit `controllers` can be combined in one `createApp`. Import
+cycles are broken automatically; a shared module may still be mounted under
+several parents.
+
 ### Auto-discovery
 
 `createApp()` scans the entry file's directory tree (`**/*.ts` via `Bun.Glob`),
@@ -462,6 +490,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |
+| `module`, `ModuleOptions` | composition | Group controllers under a prefix with shared cross-cutting; nestable. |
 | `Context`, `Ctor`, `HttpMethod` | types | Handler context and shared type aliases. |
 
 ## Project layout

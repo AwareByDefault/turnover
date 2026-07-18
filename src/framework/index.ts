@@ -37,6 +37,7 @@ export {
   type ValidatedInputs,
 } from "./http";
 export type { Ctor, HttpMethod } from "./metadata";
+export { module, type ModuleOptions } from "./module";
 export {
   getRequestState,
   getRequestStore,

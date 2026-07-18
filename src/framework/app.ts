@@ -28,9 +28,11 @@ import {
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   metadataOf,
+  MODULE,
   ROUTES,
   type RouteMeta,
 } from "./metadata";
+import type { ModuleOptions } from "./module";
 import { type RequestState, runInRequest } from "./request";
 import { issuePath, type RouteSchemas, type StandardSchemaV1 } from "./schema";
 
@@ -42,6 +44,8 @@ export interface CreateAppOptions {
    * mounted (handy for tests and bundling); importing them runs their decorators.
    */
   controllers?: Ctor[];
+  /** Mount `@module`-decorated classes (prefix + shared cross-cutting). */
+  modules?: Ctor[];
   /** Reuse an existing container. */
   container?: Container;
   /**
@@ -66,10 +70,25 @@ interface DynamicRoute {
 
 const NO_PARAMS: Record<string, string> = Object.freeze({});
 
-/** Join a controller base and a route path into one normalized pattern. */
-function joinPath(base: string, path: string): string {
-  return normalizePath(`/${base}/${path}`);
+/** Join path segments (module prefix, controller base, route) into one pattern. */
+function joinPaths(...parts: string[]): string {
+  return normalizePath(`/${parts.join("/")}`);
 }
+
+/** Cross-cutting context a module (or nesting of modules) passes to a mount. */
+interface InheritedContext {
+  prefix: string;
+  guards: Guard[];
+  derivers: Deriver[];
+  errorHandlers: ErrorHandler[];
+}
+
+const ROOT_CONTEXT: InheritedContext = {
+  prefix: "",
+  guards: [],
+  derivers: [],
+  errorHandlers: [],
+};
 
 /** Collapse duplicate slashes and drop the trailing slash (except for root). */
 function normalizePath(path: string): string {
@@ -304,7 +323,7 @@ export class App {
   }
 
   /** Instantiate a controller (with DI) and wire its routes + guards. */
-  mount(meta: ControllerMeta): void {
+  mount(meta: ControllerMeta, inherited: InheritedContext = ROOT_CONTEXT): void {
     const instance = this.container.resolve(meta.target) as Record<
       string | symbol,
       (ctx: Context) => unknown
@@ -328,15 +347,24 @@ export class App {
       new Map<PropertyKey, Deriver[]>();
 
     for (const { method, path, handlerName, schemas } of routes) {
-      const pattern = joinPath(meta.base, path);
+      const pattern = joinPaths(inherited.prefix, meta.base, path);
       const handler = instance[handlerName];
-      const guards = [...classGuards, ...(methodGuards.get(handlerName) ?? [])];
-      // Class derivers before method derivers (broad context first).
-      const derivers = [...classDerivers, ...(methodDerivers.get(handlerName) ?? [])];
-      // Most-specific first: route handlers before controller handlers.
+      // Broadest-first: module guards, then controller, then route.
+      const guards = [
+        ...inherited.guards,
+        ...classGuards,
+        ...(methodGuards.get(handlerName) ?? []),
+      ];
+      const derivers = [
+        ...inherited.derivers,
+        ...classDerivers,
+        ...(methodDerivers.get(handlerName) ?? []),
+      ];
+      // Most-specific first: route, then controller, then module.
       const scopedErrorHandlers = [
         ...(methodErrorHandlers.get(handlerName) ?? []),
         ...classErrorHandlers,
+        ...inherited.errorHandlers,
       ];
 
       this.addRoute(pattern, method, (req) => {
@@ -476,33 +504,85 @@ function entryDir(): string {
   return main.slice(0, main.lastIndexOf("/"));
 }
 
+/** The base path a `@controller` declared, or "". */
+function controllerBase(target: Ctor): string {
+  return (metadataOf(target)?.[CONTROLLER_BASE] as string | undefined) ?? "";
+}
+
+/** A controller to mount together with the module context it inherited. */
+interface MountEntry {
+  meta: ControllerMeta;
+  inherited: InheritedContext;
+}
+
+/** Expand a `@module` class into mount entries, composing prefix + cross-cutting. */
+function walkModule(
+  moduleClass: Ctor,
+  parent: InheritedContext,
+  stack: Set<Ctor>
+): MountEntry[] {
+  // `stack` holds the current ancestor chain — skip a module already in it to
+  // break import cycles, while still allowing the same module to be mounted
+  // under different parents (a legitimate diamond).
+  if (stack.has(moduleClass)) return [];
+  stack.add(moduleClass);
+
+  const options =
+    (metadataOf(moduleClass)?.[MODULE] as ModuleOptions | undefined) ?? {};
+  const inherited: InheritedContext = {
+    prefix: joinPaths(parent.prefix, options.prefix ?? ""),
+    guards: [...parent.guards, ...(options.use ?? [])],
+    derivers: [...parent.derivers, ...(options.derive ?? [])],
+    errorHandlers: [...parent.errorHandlers, ...(options.catchError ?? [])],
+  };
+
+  const entries: MountEntry[] = [];
+  for (const target of options.controllers ?? []) {
+    entries.push({ meta: { target, base: controllerBase(target) }, inherited });
+  }
+  for (const nested of options.modules ?? []) {
+    entries.push(...walkModule(nested, inherited, stack));
+  }
+
+  stack.delete(moduleClass);
+  return entries;
+}
+
 /**
- * Create an app: discover controllers (or take them explicitly), instantiate
- * each through the DI container, and build the route table. Call `.listen()` to
- * start a `Bun.serve` server, or `.handle(req)` to drive it in-memory.
+ * Create an app. Provide `modules` and/or `controllers` explicitly, or neither
+ * to scan the entry directory for `@controller` files. Each controller is
+ * instantiated through the DI container and its routes are built. Call
+ * `.listen()` to start a `Bun.serve` server, or `.handle(req)` to drive it
+ * in-memory.
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
-
-  let metas: ControllerMeta[];
-  if (options.controllers) {
-    // Explicit mode: mount exactly these classes (not the global registry), so
-    // apps and tests are isolated from whatever else has been imported.
-    metas = options.controllers.map((target) => ({
-      target,
-      base: (metadataOf(target)?.[CONTROLLER_BASE] as string | undefined) ?? "",
-    }));
-  } else {
-    await discover(options.dir ?? entryDir());
-    metas = [...registeredControllers()];
-  }
-
   const app = new App(container);
   if (options.onError) {
     app.onError(
       ...(Array.isArray(options.onError) ? options.onError : [options.onError])
     );
   }
-  for (const meta of metas) app.mount(meta);
+
+  const entries: MountEntry[] = [];
+  const stack = new Set<Ctor>();
+  for (const moduleClass of options.modules ?? []) {
+    entries.push(...walkModule(moduleClass, ROOT_CONTEXT, stack));
+  }
+  // Explicit controllers mount at the root, isolated from the global registry.
+  for (const target of options.controllers ?? []) {
+    entries.push({
+      meta: { target, base: controllerBase(target) },
+      inherited: ROOT_CONTEXT,
+    });
+  }
+  if (!options.modules && !options.controllers) {
+    await discover(options.dir ?? entryDir());
+    for (const meta of registeredControllers()) {
+      entries.push({ meta, inherited: ROOT_CONTEXT });
+    }
+  }
+
+  for (const { meta, inherited } of entries) app.mount(meta, inherited);
   return app;
 }
