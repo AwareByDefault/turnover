@@ -48,11 +48,30 @@ export type RequestHook = (
   // biome-ignore lint/suspicious/noConfusingVoidType: continue (nothing) vs short-circuit (Response)
 ) => void | Response | Promise<void | Response>;
 
+/**
+ * Runs after a response is produced (including 404s and errors). Return a
+ * `Response` to replace it, or nothing to keep it.
+ */
+export type ResponseHook = (
+  res: Response,
+  req: Request
+  // biome-ignore lint/suspicious/noConfusingVoidType: replace (Response) vs keep (nothing)
+) => void | Response | Promise<void | Response>;
+
 /** Runs once after the server starts listening. */
 export type StartHook = (server: BunServer) => void | Promise<void>;
 
 /** Runs once when the app is stopping (before the server closes). */
 export type StopHook = () => void | Promise<void>;
+
+/** A bundle of hooks registered together (e.g. what `cors()` returns). */
+export interface Plugin {
+  onRequest?: RequestHook | RequestHook[];
+  onResponse?: ResponseHook | ResponseHook[];
+  onStart?: StartHook | StartHook[];
+  onStop?: StopHook | StopHook[];
+  onError?: ErrorHandler | ErrorHandler[];
+}
 
 export interface CreateAppOptions {
   /** Directory to scan for `@controller` files. Defaults to the entry's dir. */
@@ -73,10 +92,14 @@ export interface CreateAppOptions {
   onError?: ErrorHandler | ErrorHandler[];
   /** Hook(s) run before routing on every request. See {@link App.onRequest}. */
   onRequest?: RequestHook | RequestHook[];
+  /** Hook(s) run after every response. See {@link App.onResponse}. */
+  onResponse?: ResponseHook | ResponseHook[];
   /** Hook(s) run once after `listen()`. See {@link App.onStart}. */
   onStart?: StartHook | StartHook[];
   /** Hook(s) run once on `stop()`. See {@link App.onStop}. */
   onStop?: StopHook | StopHook[];
+  /** Plugins (hook bundles) to register, e.g. `cors(...)`. */
+  plugins?: Plugin[];
 }
 
 /** A request augmented with the path params matched from its route pattern. */
@@ -258,6 +281,11 @@ async function validateResponse(
   return result.value;
 }
 
+/** Normalize a single value or array into an array. */
+function asArray<T>(value: T | T[]): T[] {
+  return Array.isArray(value) ? value : [value];
+}
+
 export class App {
   readonly container: Container;
   // The method table for every mounted pattern, kept for `routeTable()` and to
@@ -270,6 +298,7 @@ export class App {
   // App-wide error handlers, tried after any route/controller-scoped ones.
   private readonly errorHandlers: ErrorHandler[] = [];
   private readonly requestHooks: RequestHook[] = [];
+  private readonly responseHooks: ResponseHook[] = [];
   private readonly startHooks: StartHook[] = [];
   private readonly stopHooks: StopHook[] = [];
   private server?: BunServer;
@@ -291,6 +320,26 @@ export class App {
   /** Register hook(s) run before routing on every request (e.g. CORS). */
   onRequest(...hooks: RequestHook[]): this {
     this.requestHooks.push(...hooks);
+    return this;
+  }
+
+  /**
+   * Register hook(s) run after every response (including 404s and errors),
+   * in registration order. Each may return a `Response` to replace the current
+   * one, or nothing to keep it.
+   */
+  onResponse(...hooks: ResponseHook[]): this {
+    this.responseHooks.push(...hooks);
+    return this;
+  }
+
+  /** Register a plugin — a bundle of hooks (e.g. `cors(...)`). */
+  register(plugin: Plugin): this {
+    if (plugin.onRequest) this.onRequest(...asArray(plugin.onRequest));
+    if (plugin.onResponse) this.onResponse(...asArray(plugin.onResponse));
+    if (plugin.onStart) this.onStart(...asArray(plugin.onStart));
+    if (plugin.onStop) this.onStop(...asArray(plugin.onStop));
+    if (plugin.onError) this.onError(...asArray(plugin.onError));
     return this;
   }
 
@@ -518,6 +567,16 @@ export class App {
    * Ideal for tests and offline tooling (e.g. OpenAPI extraction).
    */
   async handle(req: Request): Promise<Response> {
+    let response = await this.dispatch(req);
+    for (const hook of this.responseHooks) {
+      const replaced = await hook(response, req);
+      if (replaced instanceof Response) response = replaced;
+    }
+    return response;
+  }
+
+  /** Route a request to its handler (before response hooks are applied). */
+  private async dispatch(req: Request): Promise<Response> {
     // Pre-routing hooks (CORS, logging, …); a returned Response short-circuits.
     for (const hook of this.requestHooks) {
       const short = await hook(req);
@@ -658,9 +717,10 @@ function walkModule(
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
   const app = new App(container);
-  const asArray = <T>(v: T | T[]): T[] => (Array.isArray(v) ? v : [v]);
+  for (const plugin of options.plugins ?? []) app.register(plugin);
   if (options.onError) app.onError(...asArray(options.onError));
   if (options.onRequest) app.onRequest(...asArray(options.onRequest));
+  if (options.onResponse) app.onResponse(...asArray(options.onResponse));
   if (options.onStart) app.onStart(...asArray(options.onStart));
   if (options.onStop) app.onStop(...asArray(options.onStop));
 

@@ -3,12 +3,15 @@ export {
   App,
   createApp,
   type CreateAppOptions,
+  type Plugin,
   type RequestHook,
+  type ResponseHook,
   type StartHook,
   type StopHook,
 } from "./app";
 export { Auth, type Principal, requireAuth } from "./auth";
 export { type CookieOptions, Cookies } from "./cookies";
+export { cors, type CorsOptions } from "./cors";
 export { Container, inject, injectable, type Scope } from "./di";
 export {
   BadRequestError,

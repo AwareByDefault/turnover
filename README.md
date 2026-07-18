@@ -411,8 +411,13 @@ both). They run **after guards**, around validation + the handler.
 
 - `onRequest(req)` runs **before routing** on every request (CORS, logging);
   return a `Response` to short-circuit.
+- `onResponse(res, req)` runs after every response (including 404s and errors);
+  return a `Response` to replace it, or mutate its headers.
 - `onStart(server)` runs once after `listen()`; `onStop()` runs on `app.stop()`
   (which then closes the server).
+
+A **plugin** is just a bundle of these hooks (`{ onRequest?, onResponse?, ... }`);
+register one with `app.register(plugin)` or `createApp({ plugins: [...] })`.
 
 ```ts
 const app = await createApp({
@@ -426,7 +431,26 @@ const server = app.listen(3000);
 ```
 
 Full per-request order: **onRequest → derivers → guards → interceptors (before)
-→ validation → handler → interceptors (after) → response**.
+→ validation → handler → interceptors (after) → onResponse → response**.
+
+### CORS
+
+`cors(options)` is a built-in plugin: it answers preflight `OPTIONS` requests and
+adds CORS headers to responses (including errors).
+
+```ts
+import { cors, createApp } from "../framework";
+
+const app = await createApp({
+  controllers: [...],
+  plugins: [cors({ origin: "https://app.example.com", credentials: true })],
+});
+```
+
+`origin` accepts `true` (reflect the request origin — the default), a string
+(`"*"` or a fixed origin), an array/predicate (reflect only when it matches), or
+`false`. Also supports `methods`, `allowedHeaders`, `exposedHeaders`,
+`credentials`, and `maxAge`.
 
 ### Modules
 
@@ -529,7 +553,8 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `controller`, `get`, `post`, `put`, `patch`, `del` | decorators | Define a REST controller and its routes. |
 | `use`, `Guard` | middleware | Attach guards to a controller or route. |
 | `intercept`, `Interceptor` | around advice | Wrap a handler — before/after, transform, short-circuit, catch. |
-| `RequestHook`, `StartHook`, `StopHook` | lifecycle | `onRequest` (pre-routing) + `onStart`/`onStop` hooks. |
+| `RequestHook`, `ResponseHook`, `StartHook`, `StopHook`, `Plugin` | lifecycle | `onRequest`/`onResponse` + `onStart`/`onStop` hooks; plugins bundle them. |
+| `cors`, `CorsOptions` | plugin | Built-in CORS (preflight + response headers). |
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
 | `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |
