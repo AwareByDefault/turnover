@@ -30,18 +30,21 @@ import {
   CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
   CLASS_INTERCEPTORS,
+  CLASS_MACROS,
   CONTROLLER_BASE,
   type Ctor,
   METHOD_DERIVERS,
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   METHOD_INTERCEPTORS,
+  METHOD_MACROS,
   metadataOf,
   MODULE,
   PROFILE,
   ROUTES,
   type RouteMeta,
 } from "./metadata";
+import { expandMacros, type MacroApplication } from "./macro";
 import type { ModuleOptions } from "./module";
 import {
   buildOpenApi,
@@ -483,32 +486,49 @@ export class App {
     const methodInterceptors =
       (bag?.[METHOD_INTERCEPTORS] as Map<PropertyKey, Interceptor[]> | undefined) ??
       new Map<PropertyKey, Interceptor[]>();
+    const classMacroApps = (bag?.[CLASS_MACROS] as MacroApplication[] | undefined) ?? [];
+    const methodMacroApps =
+      (bag?.[METHOD_MACROS] as Map<PropertyKey, MacroApplication[]> | undefined) ??
+      new Map<PropertyKey, MacroApplication[]>();
+    // Expand class-level macros once, in an injection context so they can inject.
+    const classMacro = this.container.runInContext(() => expandMacros(classMacroApps));
 
     for (const { method, path, handlerName, schemas, openapi } of routes) {
       const pattern = joinPaths(inherited.prefix, meta.base, path);
       this.operations.push({ method, pattern, schemas, meta: openapi });
       const handler = instance[handlerName];
-      // Broadest-first: module guards, then controller, then route.
+      const methodMacro = this.container.runInContext(() =>
+        expandMacros(methodMacroApps.get(handlerName) ?? [])
+      );
+      // Broadest-first: module guards, then controller (+macros), then route (+macros).
       const guards = [
         ...inherited.guards,
         ...classGuards,
+        ...classMacro.use,
         ...(methodGuards.get(handlerName) ?? []),
+        ...methodMacro.use,
       ];
       const derivers = [
         ...inherited.derivers,
         ...classDerivers,
+        ...classMacro.derive,
         ...(methodDerivers.get(handlerName) ?? []),
+        ...methodMacro.derive,
       ];
-      // Outermost-first: module interceptors, then controller, then route.
+      // Outermost-first: module interceptors, then controller (+macros), then route.
       const interceptors = [
         ...inherited.interceptors,
         ...classInterceptors,
+        ...classMacro.intercept,
         ...(methodInterceptors.get(handlerName) ?? []),
+        ...methodMacro.intercept,
       ];
-      // Most-specific first: route, then controller, then module.
+      // Most-specific first: route (+macros), then controller (+macros), then module.
       const scopedErrorHandlers = [
         ...(methodErrorHandlers.get(handlerName) ?? []),
+        ...methodMacro.catchError,
         ...classErrorHandlers,
+        ...classMacro.catchError,
         ...inherited.errorHandlers,
       ];
 

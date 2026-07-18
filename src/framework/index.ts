@@ -84,6 +84,12 @@ export {
   use,
   type ValidatedInputs,
 } from "./http";
+export {
+  defineMacro,
+  macro,
+  type MacroFactory,
+  type MacroHooks,
+} from "./macro";
 export type { Ctor, HttpMethod } from "./metadata";
 export { module, type ModuleOptions } from "./module";
 export type {

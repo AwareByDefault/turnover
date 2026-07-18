@@ -81,6 +81,17 @@ export class Container {
     return this;
   }
 
+  /** Run `fn` with this container active, so `inject()` works inside it. */
+  runInContext<T>(fn: () => T): T {
+    const previous = active;
+    active = this;
+    try {
+      return fn();
+    } finally {
+      active = previous;
+    }
+  }
+
   /** Bind `provider` to `token`. Repeated calls stack (see `resolveAll`). */
   register<T>(token: Token<T>, provider: Provider<T>): this {
     const list = this.providers.get(token) ?? [];

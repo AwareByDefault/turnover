@@ -54,6 +54,8 @@ export const POST_CONSTRUCT = Symbol("aware.postConstruct");
 export const PRE_DESTROY = Symbol("aware.preDestroy");
 export const PROFILE = Symbol("aware.profile");
 export const ADVICE = Symbol("aware.advice");
+export const CLASS_MACROS = Symbol("aware.classMacros");
+export const METHOD_MACROS = Symbol("aware.methodMacros");
 
 /** A writable view of a metadata bag. */
 export type MetaBag = Record<PropertyKey, unknown>;

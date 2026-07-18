@@ -576,6 +576,35 @@ app.onRequest((req) =>
 Without `toJsonSchema`, the document still lists every path, method, and
 parameter (path params default to `string`).
 
+### Macros
+
+A macro is a **named, parameterized, DI-resolvable bundle** of cross-cutting —
+guards, derivers, interceptors, error handlers — applied to a route or controller
+with one decorator. Define it once, opt in with `@macro(name, ...args)`. The
+factory runs in an injection context at mount time, so it can `inject()` services
+and close over them.
+
+```ts
+import { defineMacro, macro, inject, Auth, controller, get } from "../framework";
+
+defineMacro("role", (required: string) => {
+  const auth = inject(Auth); // resolved at mount — the DI + cross-cutting fusion
+  return {
+    use: [() => auth.user.roles.includes(required)
+      ? undefined : new Response("Forbidden", { status: 403 })],
+  };
+});
+
+@controller("/admin")
+export class AdminController {
+  @get("/users") @macro("role", "admin")  // one line replaces guard+derive+…
+  listUsers() { /* ... */ }
+}
+```
+
+A macro can contribute any of `use` / `derive` / `intercept` / `catchError`;
+class- and method-level `@macro` both apply, and multiple compose.
+
 ### Modules
 
 Group controllers into mountable, prefixed units with `@module`, and compose
@@ -693,6 +722,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |
 | `module`, `ModuleOptions` | composition | Group controllers under a prefix with shared cross-cutting; nestable. |
+| `defineMacro`, `macro`, `MacroHooks`, `MacroFactory` | macros | Named, parameterized, DI-resolvable cross-cutting bundles. |
 | `Context`, `Ctor`, `HttpMethod` | types | Handler context and shared type aliases. |
 
 ## Project layout
