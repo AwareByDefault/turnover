@@ -1,6 +1,7 @@
 // Public API of the framework.
 export { App, createApp, type CreateAppOptions } from "./app";
 export { Auth, type Principal, requireAuth } from "./auth";
+export { type CookieOptions, Cookies } from "./cookies";
 export { Container, inject, injectable, type Scope } from "./di";
 export {
   BadRequestError,
@@ -29,6 +30,7 @@ export {
   patch,
   post,
   put,
+  type ResponseState,
   use,
   type ValidatedInputs,
 } from "./http";

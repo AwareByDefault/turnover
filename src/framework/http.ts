@@ -10,6 +10,7 @@ import {
   type RouteMeta,
   ROUTES,
 } from "./metadata";
+import type { Cookies } from "./cookies";
 import type { RouteSchemas } from "./schema";
 
 /** Per-request context passed to every route handler. */
@@ -30,6 +31,10 @@ export interface Context<
    * the schema's type onto the handler signature.
    */
   readonly valid: ValidatedInputs;
+  /** Mutate the outgoing response's status and headers. */
+  readonly set: ResponseState;
+  /** Read incoming cookies and queue `Set-Cookie`s on the response. */
+  readonly cookies: Cookies;
 }
 
 /** Validated request inputs; a field is set only when its schema is declared. */
@@ -37,6 +42,14 @@ export interface ValidatedInputs {
   body?: unknown;
   query?: unknown;
   params?: unknown;
+}
+
+/** Mutable response state a handler can write via `ctx.set`. */
+export interface ResponseState {
+  /** Status for a coerced (non-`Response`) return value. */
+  status?: number;
+  /** Headers merged onto the outgoing response. */
+  headers: Headers;
 }
 
 /**

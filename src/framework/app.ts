@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { Cookies } from "./cookies";
 import { Container } from "./di";
 import {
   HttpError,
@@ -13,6 +14,7 @@ import {
   type ErrorHandler,
   type Guard,
   registeredControllers,
+  type ResponseState,
   type ValidatedInputs,
 } from "./http";
 import {
@@ -97,19 +99,44 @@ async function parseBody<T>(req: Request): Promise<T> {
   return raw as T;
 }
 
-/** Turn a handler's return value into a Response. */
-function toResponse(result: unknown): Response {
+/** Turn a handler's return value into a Response, honoring `ctx.set.status`. */
+function toResponse(result: unknown, status?: number): Response {
   if (result instanceof Response) return result;
-  if (result == null) return new Response(null, { status: 204 });
+  if (result == null) return new Response(null, { status: status ?? 204 });
   if (typeof result === "string") {
     // Set the content-type explicitly: Bun only infers it when a string body is
     // sent over a socket, so setting it here keeps in-memory `handle()` results
     // identical to what `listen()` serves.
     return new Response(result, {
+      status,
       headers: { "content-type": "text/plain;charset=utf-8" },
     });
   }
-  return Response.json(result as Record<string, unknown>);
+  return Response.json(
+    result as Record<string, unknown>,
+    status === undefined ? undefined : { status }
+  );
+}
+
+/** Merge `ctx.set.headers` and queued cookies onto a response. */
+function applyOutgoing(
+  response: Response,
+  set: ResponseState,
+  cookies: Cookies
+): Response {
+  const setCookies = cookies.serialize();
+  const headerEntries = [...set.headers];
+  if (headerEntries.length === 0 && setCookies.length === 0) return response;
+
+  const headers = new Headers(response.headers);
+  for (const [name, value] of headerEntries) headers.set(name, value);
+  for (const cookie of setCookies) headers.append("set-cookie", cookie);
+  // Reuse the body stream; status was already applied during coercion.
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 /** Flatten a query string into an object (repeated keys become arrays). */
@@ -307,18 +334,23 @@ export class App {
         const state: RequestState = { req, principal: null };
         return runInRequest(state, async () => {
           const validated: ValidatedInputs = {};
+          const set: ResponseState = { headers: new Headers() };
+          const cookies = new Cookies(req.headers.get("cookie"));
           let bodyPromise: Promise<unknown> | undefined;
           const ctx: Context = {
             req,
             params: req.params ?? {},
             query: new URL(req.url).searchParams,
             valid: validated,
+            set,
+            cookies,
             // Cache the parse so validation and the handler read the body once.
             body: <T = unknown>() =>
               (bodyPromise ??= parseBody<unknown>(req)) as Promise<T>,
           };
-          try {
-            // Guards (auth) run before validation, mirroring Nest's order.
+
+          // Guards (auth) run before validation, mirroring Nest's order.
+          const produce = async (): Promise<Response> => {
             for (const guard of guards) {
               const short = await guard(ctx);
               if (short instanceof Response) return short;
@@ -328,12 +360,23 @@ export class App {
             if (schemas?.response && !(result instanceof Response)) {
               result = await validateResponse(schemas.response, result);
             }
-            return toResponse(result);
+            return result instanceof Response
+              ? result
+              : toResponse(result, set.status);
+          };
+
+          let response: Response;
+          try {
+            response = await produce();
           } catch (err) {
             // Handlers/guards may `throw` a Response (e.g. Auth.user's 401).
-            if (err instanceof Response) return err;
-            return await this.handleError(err, ctx, scopedErrorHandlers);
+            response =
+              err instanceof Response
+                ? err
+                : await this.handleError(err, ctx, scopedErrorHandlers);
           }
+          // Apply `set.headers` + queued cookies to whatever response we produced.
+          return applyOutgoing(response, set, cookies);
         });
       });
     }

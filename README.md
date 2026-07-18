@@ -226,6 +226,46 @@ export const authenticate: Guard = (ctx) => {
 };
 ```
 
+### Response control & cookies
+
+Return a value and let it be coerced, or shape the response through `ctx.set` and
+`ctx.cookies` without constructing a `Response` by hand.
+
+```ts
+@controller("/session")
+export class SessionController {
+  @post("/login")
+  login(ctx: Context) {
+    ctx.set.status = 201;                       // status for the coerced body
+    ctx.set.headers.set("cache-control", "no-store");
+    ctx.cookies.set("session", token, {         // queued as Set-Cookie
+      httpOnly: true, secure: true, sameSite: "lax", maxAge: 3600,
+    });
+    return { ok: true };
+  }
+
+  @get("/me")
+  me(ctx: Context) {
+    const sid = ctx.cookies.get("session");     // read an incoming cookie
+    return { sid };
+  }
+
+  @post("/logout")
+  logout(ctx: Context) {
+    ctx.cookies.delete("session");              // expire it
+    return null;                                 // 204, still carries Set-Cookie
+  }
+}
+```
+
+- `ctx.set.status` sets the status of a **coerced** return value (a returned
+  `Response` keeps its own status).
+- `ctx.set.headers` (a `Headers`) is merged onto the response — even a returned
+  `Response`, keeping that response's own headers.
+- `ctx.cookies` reads incoming cookies (`get` / `has` / `all`) and queues
+  outgoing ones (`set` / `delete`); values are URL-encoded. `set.headers` and
+  cookies apply to **every** response, including a guard's short-circuit.
+
 ### Validation
 
 Declare [Standard Schema](https://standardschema.dev)-compatible schemas
@@ -389,6 +429,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `use`, `Guard` | middleware | Attach guards to a controller or route. |
 | `HttpError` (+ subclasses), `catchError`, `ErrorHandler`, `toErrorResponse` | errors | HTTP error types + handlers mapping thrown values to responses. |
 | `StandardSchemaV1`, `RouteSchemas`, `InferOutput`, `validate` | validation | Validate `body`/`query`/`params`/`response` via Standard Schema. |
+| `Cookies`, `CookieOptions`, `ResponseState` | response | Shape the response via `ctx.set` (status/headers) and `ctx.cookies`. |
 | `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
