@@ -11,6 +11,7 @@ import {
 import {
   type Context,
   type ControllerMeta,
+  type Deriver,
   type ErrorHandler,
   type Guard,
   registeredControllers,
@@ -18,10 +19,12 @@ import {
   type ValidatedInputs,
 } from "./http";
 import {
+  CLASS_DERIVERS,
   CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
   CONTROLLER_BASE,
   type Ctor,
+  METHOD_DERIVERS,
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   metadataOf,
@@ -319,11 +322,17 @@ export class App {
     const methodErrorHandlers =
       (bag?.[METHOD_ERROR_HANDLERS] as Map<PropertyKey, ErrorHandler[]> | undefined) ??
       new Map<PropertyKey, ErrorHandler[]>();
+    const classDerivers = (bag?.[CLASS_DERIVERS] as Deriver[] | undefined) ?? [];
+    const methodDerivers =
+      (bag?.[METHOD_DERIVERS] as Map<PropertyKey, Deriver[]> | undefined) ??
+      new Map<PropertyKey, Deriver[]>();
 
     for (const { method, path, handlerName, schemas } of routes) {
       const pattern = joinPath(meta.base, path);
       const handler = instance[handlerName];
       const guards = [...classGuards, ...(methodGuards.get(handlerName) ?? [])];
+      // Class derivers before method derivers (broad context first).
+      const derivers = [...classDerivers, ...(methodDerivers.get(handlerName) ?? [])];
       // Most-specific first: route handlers before controller handlers.
       const scopedErrorHandlers = [
         ...(methodErrorHandlers.get(handlerName) ?? []),
@@ -331,7 +340,13 @@ export class App {
       ];
 
       this.addRoute(pattern, method, (req) => {
-        const state: RequestState = { req, principal: null };
+        // The store starts empty; derivers fill it. Cast so apps may augment
+        // `RequestStore` with required fields without breaking this init.
+        const state: RequestState = {
+          req,
+          principal: null,
+          store: {} as RequestState["store"],
+        };
         return runInRequest(state, async () => {
           const validated: ValidatedInputs = {};
           const set: ResponseState = { headers: new Headers() };
@@ -344,13 +359,19 @@ export class App {
             valid: validated,
             set,
             cookies,
+            store: state.store, // same object, so getRequestStore() sees writes
             // Cache the parse so validation and the handler read the body once.
             body: <T = unknown>() =>
               (bodyPromise ??= parseBody<unknown>(req)) as Promise<T>,
           };
 
-          // Guards (auth) run before validation, mirroring Nest's order.
+          // Derivers populate ctx.store, then guards (auth), then validation —
+          // mirroring Elysia's derive-before-beforeHandle and Nest's ordering.
           const produce = async (): Promise<Response> => {
+            for (const deriver of derivers) {
+              const derived = await deriver(ctx);
+              if (derived) Object.assign(ctx.store, derived);
+            }
             for (const guard of guards) {
               const short = await guard(ctx);
               if (short instanceof Response) return short;

@@ -24,6 +24,8 @@ export {
   type Context,
   controller,
   del,
+  derive,
+  type Deriver,
   type ErrorHandler,
   get,
   type Guard,
@@ -35,7 +37,13 @@ export {
   type ValidatedInputs,
 } from "./http";
 export type { Ctor, HttpMethod } from "./metadata";
-export { getRequestState, type RequestState, setPrincipal } from "./request";
+export {
+  getRequestState,
+  getRequestStore,
+  type RequestState,
+  type RequestStore,
+  setPrincipal,
+} from "./request";
 export {
   type InferInput,
   type InferOutput,

@@ -1,16 +1,19 @@
+import type { Cookies } from "./cookies";
 import {
+  CLASS_DERIVERS,
   CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
   CONTROLLER_BASE,
   type Ctor,
   ctxMeta,
   type HttpMethod,
+  METHOD_DERIVERS,
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   type RouteMeta,
   ROUTES,
 } from "./metadata";
-import type { Cookies } from "./cookies";
+import type { RequestStore } from "./request";
 import type { RouteSchemas } from "./schema";
 
 /** Per-request context passed to every route handler. */
@@ -35,6 +38,8 @@ export interface Context<
   readonly set: ResponseState;
   /** Read incoming cookies and queue `Set-Cookie`s on the response. */
   readonly cookies: Cookies;
+  /** Per-request values populated by `@derive` handlers (augment `RequestStore`). */
+  readonly store: RequestStore;
 }
 
 /** Validated request inputs; a field is set only when its schema is declared. */
@@ -70,6 +75,15 @@ export type ErrorHandler = (
   ctx: Context
   // biome-ignore lint/suspicious/noConfusingVoidType: handled (Response) vs defer (nothing), sync or async
 ) => void | Response | Promise<void | Response>;
+
+/**
+ * A deriver computes per-request values *before guards run*. Return an object to
+ * merge into `ctx.store`, or write `ctx.store` directly. Throw (e.g. an
+ * `HttpError`) to abort the request.
+ */
+export type Deriver = (
+  ctx: Context
+) => void | Partial<RequestStore> | Promise<void | Partial<RequestStore>>;
 
 export interface ControllerMeta {
   target: Ctor;
@@ -177,6 +191,39 @@ export function catchError(...handlers: ErrorHandler[]) {
       list.push(...handlers);
       map.set(context.name, list);
       meta[METHOD_ERROR_HANDLERS] = map;
+    }
+  };
+}
+
+/**
+ * Attach derivers to a controller (every route) or a single route. They run
+ * before guards — class derivers before method derivers — to populate
+ * `ctx.store` with per-request context (a session, tenant, etc.).
+ *
+ * ```ts
+ * @controller("/orders")
+ * @derive((ctx) => ({ tenant: ctx.req.headers.get("x-tenant") }))
+ * class OrdersController { ... }
+ * ```
+ */
+export function derive(...derivers: Deriver[]) {
+  return (
+    _value: unknown,
+    context: ClassDecoratorContext | ClassMethodDecoratorContext
+  ): void => {
+    const meta = ctxMeta(context);
+    if (context.kind === "class") {
+      const list = (meta[CLASS_DERIVERS] as Deriver[] | undefined) ?? [];
+      list.push(...derivers);
+      meta[CLASS_DERIVERS] = list;
+    } else {
+      const map =
+        (meta[METHOD_DERIVERS] as Map<PropertyKey, Deriver[]> | undefined) ??
+        new Map<PropertyKey, Deriver[]>();
+      const list = map.get(context.name) ?? [];
+      list.push(...derivers);
+      map.set(context.name, list);
+      meta[METHOD_DERIVERS] = map;
     }
   };
 }

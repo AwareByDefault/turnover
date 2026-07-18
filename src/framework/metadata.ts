@@ -42,6 +42,8 @@ export const CLASS_GUARDS = Symbol("aware.classGuards");
 export const METHOD_GUARDS = Symbol("aware.methodGuards");
 export const CLASS_ERROR_HANDLERS = Symbol("aware.classErrorHandlers");
 export const METHOD_ERROR_HANDLERS = Symbol("aware.methodErrorHandlers");
+export const CLASS_DERIVERS = Symbol("aware.classDerivers");
+export const METHOD_DERIVERS = Symbol("aware.methodDerivers");
 export const CONTROLLER_BASE = Symbol("aware.controllerBase");
 
 /** A writable view of a metadata bag. */

@@ -226,6 +226,34 @@ export const authenticate: Guard = (ctx) => {
 };
 ```
 
+### Deriving request context
+
+`@derive(...)` runs functions **before guards** to compute per-request values,
+which land on `ctx.store` (and are readable from injected singletons via
+`getRequestStore()`). Return an object to merge into the store, or write
+`ctx.store` directly; throw to abort. Type the store by augmenting `RequestStore`.
+
+```ts
+import { controller, derive, get, use, type Context } from "../framework";
+
+declare module "../framework/request" {
+  interface RequestStore { tenant: string }
+}
+
+@controller("/orders")
+@derive((ctx) => ({ tenant: ctx.req.headers.get("x-tenant") ?? "public" }))
+@use(requireTenant) // guards run after derivers, so they can read ctx.store
+export class OrdersController {
+  @get("/")
+  list(ctx: Context) {
+    return { tenant: ctx.store.tenant };
+  }
+}
+```
+
+Order per request: **derivers → guards → validation → handler**. Class-level
+derivers run before method-level ones.
+
 ### Response control & cookies
 
 Return a value and let it be coerced, or shape the response through `ctx.set` and
@@ -433,6 +461,7 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `injectable`, `inject`, `Container`, `Scope` | DI | Register and resolve services. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
+| `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |
 | `Context`, `Ctor`, `HttpMethod` | types | Handler context and shared type aliases. |
 
 ## Project layout
