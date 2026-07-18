@@ -1,0 +1,197 @@
+name: Release
+
+# Publish-on-merge with Changesets. Every push to main is inspected for pending
+# changesets; if any are present the release job consumes them with
+# `changeset version` (bumps package.json + CHANGELOG.md), commits that back to
+# main, `changeset publish`es to npm, and cuts a GitHub Release for the new
+# `v<version>` tag (notes = that version's CHANGELOG section). A push carrying no
+# changesets is a clean no-op; one carrying only *empty* (no-release) changesets
+# consumes them (so they don't retrigger later pushes) but publishes nothing. The
+# version comes from the changeset files a PR includes, not from commit messages.
+#
+# The version commit + tags push DIRECTLY to main, which the 'Protect main'
+# ruleset gates behind a PR. So the release job pushes as the awarebydefault-release
+# GitHub App (the ruleset's sole bypass actor) via a minted App token; the version
+# commit is tagged [skip ci] so it doesn't retrigger this workflow.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two releases against main at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap, secret-free gate: does main carry any pending changesets? Splitting this
+  # out means an ordinary push (or the pre-secrets bootstrap window) skips the
+  # release job entirely instead of failing when the App/npm secrets are absent.
+  detect:
+    name: Detect changesets
+    runs-on: ubuntu-latest
+    outputs:
+      has_changesets: ${{ steps.check.outputs.has_changesets }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pending=()
+          for f in .changeset/*.md; do
+            [ "$(basename "$f")" = "README.md" ] || pending+=("$f")
+          done
+          if [ ${#pending[@]} -gt 0 ]; then
+            echo "Found ${#pending[@]} changeset(s)."
+            echo "has_changesets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No changesets pending — nothing to release."
+            echo "has_changesets=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Release
+    needs: detect
+    if: needs.detect.outputs.has_changesets == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version commit + tags
+      id-token: write # npm OIDC trusted publishing + provenance
+    steps:
+      # Mint a short-lived GitHub App installation token. The version commit +
+      # tags push directly to main, which the branch ruleset gates behind a PR;
+      # the built-in GITHUB_TOKEN can't be a bypass actor, this App can.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@v7
+        with:
+          # Full history so changeset can resolve tags, and credentials persisted
+          # so the version commit + tags push as the App.
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      # Node 24 + npm >=11.5.1 provide the `npm` binary `changeset publish` shells
+      # out to for the OIDC trusted-publishing handshake. This is the only non-Bun
+      # part of the pipeline; drop it once `bun publish` gains provenance + OIDC
+      # (oven-sh/bun#30522 and #24855, both open). No `registry-url` — it would
+      # write an .npmrc that shadows NPM_TOKEN / OIDC.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Pinned, not `npm@latest`: npm 12.0.0 broke `sigstore` bundling on global
+      # install, so provenance publish fails with `Cannot find module 'sigstore'`.
+      # 11.18.0 is the newest 11.x with working provenance and still satisfies the
+      # trusted-publishing floor (>= 11.5.1). Bump when a fixed npm 12.x is
+      # confirmed, or drop once `bun publish` gains OIDC + provenance.
+      - run: npm install -g npm@11.18.0
+      - run: npm --version # must be >= 11.5.1 for trusted publishing
+      - run: bun install --frozen-lockfile
+      # Correctness gate before publishing (mirrors CI).
+      - run: bun run typecheck
+      - run: bun run build
+      # Consume changesets → version + changelog, commit to main, publish to npm.
+      - name: Version & publish
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Bootstrap/fallback only — npm OIDC trusted publishing is used when this
+          # is unset (delete the secret once the trusted publisher is configured).
+          # See contributing/releasing.md.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+
+          # Any pending changesets? (.changeset/*.md other than the README)
+          shopt -s nullglob
+          pending=()
+          for f in .changeset/*.md; do
+            [ "$(basename "$f")" = "README.md" ] || pending+=("$f")
+          done
+          if [ ${#pending[@]} -eq 0 ]; then
+            echo "No changesets pending — nothing to release."
+            exit 0
+          fi
+          echo "Found ${#pending[@]} changeset(s)."
+
+          # Commit as the release App's bot identity (the push auth — the App
+          # token — is what the ruleset bypasses, independent of commit author).
+          bot_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+          # Bump package.json + CHANGELOG.md and delete the consumed changesets.
+          # An *empty* (no-release) changeset is still consumed here — the file is
+          # deleted — but the version is NOT bumped, so capture it either side.
+          prev_version="$(bun --print "require('./package.json').version")"
+          bun run changeset:version
+          new_version="$(bun --print "require('./package.json').version")"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Versioning produced no file changes — nothing to release."
+            exit 0
+          fi
+
+          # No version bump means only empty (no-release) changesets were consumed.
+          # A staged change still exists (the deleted changeset file), so the diff
+          # guard above can't catch this — publishing here would re-push the
+          # unchanged version and fail. Clean the consumed changeset(s) off main so
+          # they don't retrigger every future push, but publish nothing.
+          if [ "$prev_version" = "$new_version" ]; then
+            echo "No version bump — only empty changeset(s). Cleaning up, not publishing."
+            git commit -m "chore: consume empty changeset(s) [skip ci]"
+            git push origin HEAD:main
+            exit 0
+          fi
+
+          git commit -m "chore(release): version packages [skip ci]"
+
+          # npm auth: prefer OIDC trusted publishing (no token). Only write an
+          # .npmrc when NPM_TOKEN is set (bootstrap/fallback).
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "Using NPM_TOKEN for npm auth (delete the secret to use OIDC)."
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> "$HOME/.npmrc"
+          fi
+
+          # Publish BEFORE pushing: `changeset publish` skips versions already on
+          # the registry, so a push failure here is recoverable by re-running
+          # (the changesets are still on main until the push lands).
+          bun run changeset:publish
+
+          git push origin HEAD:main
+          git push origin --tags
+
+          # Cut a GitHub Release for the new tag, with that version's CHANGELOG.md
+          # section as the notes (`changeset publish` tags `v<version>` but never
+          # creates the Release). Idempotent: a re-run after a partial failure
+          # skips a Release that already exists, mirroring `changeset publish`.
+          new_version="$(bun --print "require('./package.json').version")"
+          new_tag="v${new_version}"
+          notes_file="$(mktemp)"
+          # Print the body between "## <version>" and the next H1/H2 header, then
+          # trim leading blank lines.
+          awk -v ver="${new_version}" '
+            $0 == "## " ver { flag=1; next }
+            /^#{1,2} / && flag { flag=0 }
+            flag { print }
+          ' CHANGELOG.md | sed "/./,\$!d" > "${notes_file}"
+          if gh release view "${new_tag}" >/dev/null 2>&1; then
+            echo "GitHub Release ${new_tag} already exists — skipping."
+          else
+            gh release create "${new_tag}" \
+              --title "${new_tag}" \
+              --notes-file "${notes_file}" \
+              --verify-tag \
+              --latest
+            echo "Created GitHub Release ${new_tag}."
+          fi

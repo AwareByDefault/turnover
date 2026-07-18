@@ -1,4 +1,6 @@
-# Dependabot keeps dependencies and GitHub Actions current.
+# Dependabot keeps dependencies and GitHub Actions current. Versioning/publishing
+# is driven by Changesets, so a Dependabot PR still needs a changeset to merge
+# (the `Changeset present` CI check). See contributing/releasing.md.
 version: 2
 updates:
   # npm (Bun reads the same package.json / lockfile manifests Dependabot updates).

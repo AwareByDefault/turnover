@@ -1,9 +1,8 @@
 name: CI
 
-# Lean gate for the framework: typecheck the whole tree and verify the published
-# build compiles. Runs on every PR and on pushes to main. (Lint/test/release
-# automation is deferred — see the plan; this mirrors what package.json scripts
-# actually provide today.)
+# Backstop gate on every PR (and pushes to main): require a changeset so release
+# impact is always declared, then typecheck the tree and verify the published
+# build compiles. Matches what the release workflow runs before publishing.
 on:
   pull_request:
   push:
@@ -16,11 +15,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every PR must declare its release impact with a Changeset (versioning is
+  # decoupled from commit messages). Add one with `bun run changeset` (patch/
+  # minor/major + description), or `bun run changeset --empty` for a no-release
+  # change. See contributing/releasing.md.
+  changeset:
+    name: Changeset present
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require a changeset in this PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "$BASE_SHA" HEAD -- '.changeset/*.md' ':!.changeset/README.md' || true)"
+          if [ -z "$changed" ]; then
+            echo "::error::No changeset found. Run 'bun run changeset' to declare this PR's release impact (patch/minor/major + a description), or 'bun run changeset --empty' for a no-release change. See contributing/releasing.md."
+            exit 1
+          fi
+          echo "Changeset(s) in this PR:"
+          echo "$changed"
+
   build:
     name: Typecheck & build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
