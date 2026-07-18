@@ -39,9 +39,11 @@ import {
   METHOD_GUARDS,
   METHOD_INTERCEPTORS,
   METHOD_MACROS,
+  METHOD_RESOLVERS,
   metadataOf,
   MODULE,
   PROFILE,
+  CLASS_RESOLVERS,
   ROUTES,
   type RouteMeta,
 } from "./metadata";
@@ -75,6 +77,20 @@ export type ResponseHook = (
   // biome-ignore lint/suspicious/noConfusingVoidType: replace (Response) vs keep (nothing)
 ) => void | Response | Promise<void | Response>;
 
+/** Runs (fire-and-forget) after a response is produced — for metrics/telemetry. */
+export type AfterResponseHook = (res: Response, req: Request) => void | Promise<void>;
+
+/** A per-request timing event passed to `onTrace` hooks. */
+export interface TraceEvent {
+  req: Request;
+  response: Response;
+  /** Total time to handle the request, in milliseconds. */
+  durationMs: number;
+}
+
+/** Runs (fire-and-forget) after each request with its timing. */
+export type TraceHook = (event: TraceEvent) => void;
+
 /** Runs once after the server starts listening. */
 export type StartHook = (server: BunServer) => void | Promise<void>;
 
@@ -103,6 +119,8 @@ export interface ResponseSerializer {
 export interface Plugin {
   onRequest?: RequestHook | RequestHook[];
   onResponse?: ResponseHook | ResponseHook[];
+  onAfterResponse?: AfterResponseHook | AfterResponseHook[];
+  onTrace?: TraceHook | TraceHook[];
   onStart?: StartHook | StartHook[];
   onStop?: StopHook | StopHook[];
   onError?: ErrorHandler | ErrorHandler[];
@@ -141,6 +159,10 @@ export interface CreateAppOptions {
   onRequest?: RequestHook | RequestHook[];
   /** Hook(s) run after every response. See {@link App.onResponse}. */
   onResponse?: ResponseHook | ResponseHook[];
+  /** Fire-and-forget hook(s) after each response. See {@link App.onAfterResponse}. */
+  onAfterResponse?: AfterResponseHook | AfterResponseHook[];
+  /** Per-request timing hook(s). See {@link App.onTrace}. */
+  onTrace?: TraceHook | TraceHook[];
   /** Hook(s) run once after `listen()`. See {@link App.onStart}. */
   onStart?: StartHook | StartHook[];
   /** Hook(s) run once on `stop()`. See {@link App.onStop}. */
@@ -360,6 +382,8 @@ export class App {
   private readonly errorHandlers: ErrorHandler[] = [];
   private readonly requestHooks: RequestHook[] = [];
   private readonly responseHooks: ResponseHook[] = [];
+  private readonly afterResponseHooks: AfterResponseHook[] = [];
+  private readonly traceHooks: TraceHook[] = [];
   private readonly startHooks: StartHook[] = [];
   private readonly stopHooks: StopHook[] = [];
   private readonly parsers: BodyParser[] = [];
@@ -419,10 +443,24 @@ export class App {
     return this;
   }
 
+  /** Register fire-and-forget hook(s) run after each response (metrics, logging). */
+  onAfterResponse(...hooks: AfterResponseHook[]): this {
+    this.afterResponseHooks.push(...hooks);
+    return this;
+  }
+
+  /** Register hook(s) that receive each request's total timing. */
+  onTrace(...hooks: TraceHook[]): this {
+    this.traceHooks.push(...hooks);
+    return this;
+  }
+
   /** Register a plugin — a bundle of hooks (e.g. `cors(...)`). */
   register(plugin: Plugin): this {
     if (plugin.onRequest) this.onRequest(...asArray(plugin.onRequest));
     if (plugin.onResponse) this.onResponse(...asArray(plugin.onResponse));
+    if (plugin.onAfterResponse) this.onAfterResponse(...asArray(plugin.onAfterResponse));
+    if (plugin.onTrace) this.onTrace(...asArray(plugin.onTrace));
     if (plugin.onStart) this.onStart(...asArray(plugin.onStart));
     if (plugin.onStop) this.onStop(...asArray(plugin.onStop));
     if (plugin.onError) this.onError(...asArray(plugin.onError));
@@ -554,6 +592,10 @@ export class App {
       new Map<PropertyKey, MacroApplication[]>();
     // Expand class-level macros once, in an injection context so they can inject.
     const classMacro = this.container.runInContext(() => expandMacros(classMacroApps));
+    const classResolvers = (bag?.[CLASS_RESOLVERS] as Deriver[] | undefined) ?? [];
+    const methodResolvers =
+      (bag?.[METHOD_RESOLVERS] as Map<PropertyKey, Deriver[]> | undefined) ??
+      new Map<PropertyKey, Deriver[]>();
 
     for (const { method, path, handlerName, schemas, openapi } of routes) {
       const pattern = joinPaths(inherited.prefix, meta.base, path);
@@ -576,6 +618,11 @@ export class App {
         ...classMacro.derive,
         ...(methodDerivers.get(handlerName) ?? []),
         ...methodMacro.derive,
+      ];
+      // Resolvers run after validation (they can read `ctx.valid`).
+      const resolvers = [
+        ...classResolvers,
+        ...(methodResolvers.get(handlerName) ?? []),
       ];
       // Outermost-first: module interceptors, then controller (+macros), then route.
       const interceptors = [
@@ -634,6 +681,11 @@ export class App {
             // Validation + handler + response coercion — the interceptor target.
             const core = async (): Promise<Response> => {
               if (schemas) await validateInputs(schemas, ctx);
+              // Resolvers run after validation so they can read `ctx.valid`.
+              for (const resolver of resolvers) {
+                const resolved = await resolver(ctx);
+                if (resolved) Object.assign(ctx.store, resolved);
+              }
               const result = await handler.call(instance, ctx);
               if (result instanceof Response) return result;
               const validated2 =
@@ -679,10 +731,34 @@ export class App {
    * Ideal for tests and offline tooling (e.g. OpenAPI extraction).
    */
   async handle(req: Request): Promise<Response> {
+    const started = this.traceHooks.length > 0 ? performance.now() : 0;
     let response = await this.dispatch(req);
     for (const hook of this.responseHooks) {
       const replaced = await hook(response, req);
       if (replaced instanceof Response) response = replaced;
+    }
+    if (this.traceHooks.length > 0) {
+      const event: TraceEvent = { req, response, durationMs: performance.now() - started };
+      for (const hook of this.traceHooks) {
+        try {
+          hook(event);
+        } catch (err) {
+          console.error("[turnover] onTrace hook failed:", err);
+        }
+      }
+    }
+    // Fire-and-forget so telemetry never delays the response.
+    for (const hook of this.afterResponseHooks) {
+      try {
+        const result = hook(response, req);
+        if (result instanceof Promise) {
+          result.catch((err) =>
+            console.error("[turnover] onAfterResponse hook failed:", err)
+          );
+        }
+      } catch (err) {
+        console.error("[turnover] onAfterResponse hook failed:", err);
+      }
     }
     return response;
   }
@@ -885,6 +961,8 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   if (options.onError) app.onError(...asArray(options.onError));
   if (options.onRequest) app.onRequest(...asArray(options.onRequest));
   if (options.onResponse) app.onResponse(...asArray(options.onResponse));
+  if (options.onAfterResponse) app.onAfterResponse(...asArray(options.onAfterResponse));
+  if (options.onTrace) app.onTrace(...asArray(options.onTrace));
   if (options.onStart) app.onStart(...asArray(options.onStart));
   if (options.onStop) app.onStop(...asArray(options.onStop));
   if (options.parsers) app.addParser(...options.parsers);

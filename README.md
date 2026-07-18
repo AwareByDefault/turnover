@@ -341,8 +341,10 @@ export class OrdersController {
 }
 ```
 
-Order per request: **derivers → guards → validation → handler**. Class-level
-derivers run before method-level ones.
+Order per request: **derivers → guards → validation → resolvers → handler**.
+Class-level derivers run before method-level ones. `@resolve(...)` is like
+`@derive` but runs **after validation**, so it can read `ctx.valid` (e.g. load
+the entity named by a now-validated `:id`).
 
 ### Response control & cookies
 
@@ -528,6 +530,9 @@ both). They run **after guards**, around validation + the handler.
   return a `Response` to short-circuit.
 - `onResponse(res, req)` runs after every response (including 404s and errors);
   return a `Response` to replace it, or mutate its headers.
+- `onAfterResponse(res, req)` runs **fire-and-forget** after the response (never
+  delays it) — for metrics/logging. `onTrace(event)` reports each request's
+  `durationMs`.
 - `onStart(server)` runs once after `listen()`; `onStop()` runs on `app.stop()`
   (which then closes the server).
 
@@ -546,7 +551,8 @@ const server = app.listen(3000);
 ```
 
 Full per-request order: **onRequest → derivers → guards → interceptors (before)
-→ validation → handler → interceptors (after) → onResponse → response**.
+→ validation → resolvers → handler → interceptors (after) → onResponse → response
+→ onAfterResponse / onTrace**.
 
 ### CORS
 
@@ -775,7 +781,8 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `before`, `after`, `around`, `JoinPoint`, `ProceedingJoinPoint` | method AOP | Advise any injectable service method. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
-| `derive`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards. |
+| `derive`, `resolve`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards / after validation. |
+| `AfterResponseHook`, `TraceHook`, `TraceEvent` | lifecycle | `onAfterResponse` (fire-and-forget) + `onTrace` (per-request timing). |
 | `module`, `ModuleOptions` | composition | Group controllers under a prefix with shared cross-cutting; nestable. |
 | `defineMacro`, `macro`, `MacroHooks`, `MacroFactory` | macros | Named, parameterized, DI-resolvable cross-cutting bundles. |
 | `Events`, `onEvent`, `EventType` | events | In-process publish/subscribe for decoupling. |

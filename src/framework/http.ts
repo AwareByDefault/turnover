@@ -4,6 +4,7 @@ import {
   CLASS_ERROR_HANDLERS,
   CLASS_GUARDS,
   CLASS_INTERCEPTORS,
+  CLASS_RESOLVERS,
   CONTROLLER_BASE,
   type Ctor,
   ctxMeta,
@@ -12,6 +13,7 @@ import {
   METHOD_ERROR_HANDLERS,
   METHOD_GUARDS,
   METHOD_INTERCEPTORS,
+  METHOD_RESOLVERS,
   type RouteMeta,
   ROUTES,
 } from "./metadata";
@@ -249,6 +251,33 @@ export function derive(...derivers: Deriver[]) {
       list.push(...derivers);
       map.set(context.name, list);
       meta[METHOD_DERIVERS] = map;
+    }
+  };
+}
+
+/**
+ * Like `@derive`, but runs *after* guards and validation — so it can read
+ * `ctx.valid`. Populate `ctx.store` with values derived from validated input
+ * (e.g. load the entity named by a now-validated `:id`).
+ */
+export function resolve(...resolvers: Deriver[]) {
+  return (
+    _value: unknown,
+    context: ClassDecoratorContext | ClassMethodDecoratorContext
+  ): void => {
+    const meta = ctxMeta(context);
+    if (context.kind === "class") {
+      const list = (meta[CLASS_RESOLVERS] as Deriver[] | undefined) ?? [];
+      list.push(...resolvers);
+      meta[CLASS_RESOLVERS] = list;
+    } else {
+      const map =
+        (meta[METHOD_RESOLVERS] as Map<PropertyKey, Deriver[]> | undefined) ??
+        new Map<PropertyKey, Deriver[]>();
+      const list = map.get(context.name) ?? [];
+      list.push(...resolvers);
+      map.set(context.name, list);
+      meta[METHOD_RESOLVERS] = map;
     }
   };
 }

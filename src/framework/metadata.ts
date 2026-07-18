@@ -56,6 +56,8 @@ export const PROFILE = Symbol("aware.profile");
 export const ADVICE = Symbol("aware.advice");
 export const CLASS_MACROS = Symbol("aware.classMacros");
 export const METHOD_MACROS = Symbol("aware.methodMacros");
+export const CLASS_RESOLVERS = Symbol("aware.classResolvers");
+export const METHOD_RESOLVERS = Symbol("aware.methodResolvers");
 export const EVENT_LISTENERS = Symbol("aware.eventListeners");
 
 /** A writable view of a metadata bag. */

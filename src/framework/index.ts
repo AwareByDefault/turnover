@@ -1,5 +1,6 @@
 // Public API of the framework.
 export {
+  type AfterResponseHook,
   App,
   type BodyParser,
   createApp,
@@ -10,6 +11,8 @@ export {
   type ResponseSerializer,
   type StartHook,
   type StopHook,
+  type TraceEvent,
+  type TraceHook,
 } from "./app";
 export {
   after,
@@ -87,6 +90,7 @@ export {
   patch,
   post,
   put,
+  resolve,
   type ResponseState,
   type RouteOptions,
   use,
