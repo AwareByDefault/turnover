@@ -1,6 +1,8 @@
 import { pathToFileURL } from "node:url";
 import { aspectProcessor } from "./aop";
+import { cacheProcessor } from "./cache";
 import { eventListenerProcessor } from "./events";
+import { transactionalProcessor } from "./transaction";
 import {
   ACTIVE_PROFILES,
   type ConfigSource,
@@ -946,9 +948,11 @@ function walkModule(
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container();
-  // AOP aspect processor, then event-listener registration, then user ones.
+  // AOP aspect, event-listener, transaction, cache (outermost), then user ones.
   container.addPostProcessor(aspectProcessor);
   container.addPostProcessor(eventListenerProcessor(container));
+  container.addPostProcessor(transactionalProcessor(container));
+  container.addPostProcessor(cacheProcessor(container));
   for (const pp of options.postProcessors ?? []) container.addPostProcessor(pp);
   const activeProfiles = options.profiles ?? envProfiles();
   container.register(ACTIVE_PROFILES, { useValue: activeProfiles });

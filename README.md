@@ -260,6 +260,27 @@ async methods). Advice applies to calls made through the injected instance;
 self-invocation bypasses it (Spring's proxy semantics). `createApp`
 auto-registers the aspect processor.
 
+**Transactions & caching** are two built-in advices on that mechanism:
+
+```ts
+@injectable()
+class Orders {
+  @transactional                       // runs inside the bound TransactionManager
+  async place(order: Order) { /* ... commits, or rolls back on throw */ }
+
+  @cacheable({ ttl: 60_000 })          // memoize by args in the CacheStore
+  async pricing(sku: string) { /* ... */ }
+
+  @cacheEvict                          // clear the cache when called
+  async refresh() { /* ... */ }
+}
+```
+
+Bind your database's manager (`{ provide: TRANSACTION_MANAGER, useValue }`) — the
+default just runs the method. Caching uses an in-memory `MemoryCache` by default;
+bind `CACHE_STORE` to swap it (e.g. Redis). `@cacheable` supports `key`, `ttl`,
+and a `keyBy(...args)`.
+
 ### Guards & auth
 
 `@use(...guards)` attaches middleware to a whole controller or a single route. A
@@ -781,6 +802,8 @@ Everything is exported from [src/framework/index.ts](src/framework/index.ts):
 | `Config`, `value`, `requireValue`, `ConfigSource`, `profile` | config | Typed config/env reads + profile-gated mounting. |
 | `PostProcessor`, `Container.addPostProcessor` | AOP seam | Wrap/replace constructed instances (foundation for method advice). |
 | `before`, `after`, `around`, `JoinPoint`, `ProceedingJoinPoint` | method AOP | Advise any injectable service method. |
+| `transactional`, `TransactionManager`, `TRANSACTION_MANAGER` | transactions | Run a method in a pluggable unit-of-work. |
+| `cacheable`, `cacheEvict`, `CacheStore`, `CACHE_STORE`, `MemoryCache` | caching | Memoize method results in a pluggable store. |
 | `Auth`, `Principal`, `requireAuth` | auth | Request-scoped principal accessor + guard. |
 | `getRequestState`, `setPrincipal`, `RequestState` | request scope | Read/attach per-request state (backed by `AsyncLocalStorage`). |
 | `derive`, `resolve`, `Deriver`, `RequestStore`, `getRequestStore` | request context | Compute per-request values (`ctx.store`) before guards / after validation. |

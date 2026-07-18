@@ -27,6 +27,19 @@ export {
 } from "./aop";
 export { Auth, type Principal, requireAuth } from "./auth";
 export {
+  CACHE_STORE,
+  cacheable,
+  type CacheableOptions,
+  cacheEvict,
+  type CacheStore,
+  MemoryCache,
+} from "./cache";
+export {
+  TRANSACTION_MANAGER,
+  transactional,
+  type TransactionManager,
+} from "./transaction";
+export {
   ACTIVE_PROFILES,
   Config,
   CONFIG_SOURCE,
