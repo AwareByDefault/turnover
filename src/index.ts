@@ -91,6 +91,7 @@ export {
   UnauthorizedError,
   UnprocessableEntityError,
 } from './error'
+export { type EtagOptions, etag } from './etag'
 export {
   type EventListener,
   Events,
