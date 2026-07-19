@@ -61,6 +61,11 @@
       "import": "./dist/bundler.js",
       "default": "./dist/bundler.js"
     },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
+    },
     "./package.json": "./package.json"
   },
   "files": ["dist", "src"],
