@@ -56,6 +56,7 @@ import { type RequestState, runInRequest } from './request'
 import { Scheduler, schedulingProcessor } from './scheduling'
 import { issuePath, type RouteSchemas, type StandardSchemaV1 } from './schema'
 import { transactionalProcessor } from './transaction'
+import type { WebSocketRoute } from './websocket'
 
 /** The `Bun.serve` server returned by `App.listen`. */
 type BunServer = ReturnType<typeof Bun.serve>
@@ -196,6 +197,8 @@ export interface CreateAppOptions {
    * `{ "/legacy": legacy.fetch }`. See {@link App.delegate}.
    */
   delegate?: Record<string, FetchHandler>
+  /** A WebSocket endpoint served alongside the HTTP routes. See {@link App.websocket}. */
+  websocket?: WebSocketRoute
 }
 
 /** Options for {@link App.listen}. */
@@ -458,6 +461,7 @@ export class App {
   // Sorted longest-prefix-first so the most specific delegate wins.
   private readonly delegates: { prefix: string; handler: FetchHandler }[] = []
   private server?: BunServer
+  private wsRoute?: WebSocketRoute
   private readonly scheduler: Scheduler
 
   /**
@@ -559,6 +563,18 @@ export class App {
   delegate(path: string, handler: FetchHandler): this {
     this.delegates.push({ prefix: normalizePath(path), handler })
     this.delegates.sort((a, b) => b.prefix.length - a.prefix.length)
+    return this
+  }
+
+  /**
+   * Serve a WebSocket endpoint alongside the HTTP routes. `listen()` upgrades a
+   * matching request (see {@link WebSocketRoute.path}/{@link WebSocketRoute.upgrade})
+   * and dispatches its lifecycle callbacks; everything else routes through
+   * `handle()` as usual. Only meaningful under `listen()` — `handle()` has no
+   * socket to upgrade. One route per app (register the newest).
+   */
+  websocket(route: WebSocketRoute): this {
+    this.wsRoute = route
     return this
   }
 
@@ -1047,11 +1063,41 @@ export class App {
     const resolvedPort =
       port ?? (envPort !== undefined && envPort !== '' ? Number(envPort) : 3000)
     const hostname = options.hostname ?? Bun.env.HOST ?? undefined
-    this.server = Bun.serve({
-      port: resolvedPort,
-      hostname,
-      fetch: (req) => this.handle(req),
-    })
+    const wsRoute = this.wsRoute
+    this.server = wsRoute
+      ? Bun.serve({
+          port: resolvedPort,
+          hostname,
+          fetch: async (req, server) => {
+            const isUpgrade =
+              req.headers.get('upgrade')?.toLowerCase() === 'websocket'
+            const pathMatches =
+              !wsRoute.path || new URL(req.url).pathname === wsRoute.path
+            if (isUpgrade && pathMatches) {
+              const data = wsRoute.upgrade
+                ? await wsRoute.upgrade(req)
+                : undefined
+              if (wsRoute.upgrade && data === undefined) {
+                return new Response('Unauthorized', { status: 401 })
+              }
+              // A successful upgrade hands the socket to Bun; return nothing.
+              if (server.upgrade(req, { data })) return undefined
+              return new Response('WebSocket upgrade failed', { status: 400 })
+            }
+            return this.handle(req)
+          },
+          websocket: {
+            open: (ws) => wsRoute.open?.(ws),
+            message: (ws, message) => wsRoute.message?.(ws, message),
+            close: (ws, code, reason) => wsRoute.close?.(ws, code, reason),
+            drain: (ws) => wsRoute.drain?.(ws),
+          },
+        })
+      : Bun.serve({
+          port: resolvedPort,
+          hostname,
+          fetch: (req) => this.handle(req),
+        })
     this.scheduler.start()
     if (options.signals !== false) this.installSignalHandlers()
     for (const hook of this.startHooks) {
@@ -1237,6 +1283,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   if (options.parsers) app.addParser(...options.parsers)
   if (options.serializers) app.addSerializer(...options.serializers)
   if (options.wrap) app.wrap(...asArray(options.wrap))
+  if (options.websocket) app.websocket(options.websocket)
   for (const [path, handler] of Object.entries(options.delegate ?? {})) {
     app.delegate(path, handler)
   }

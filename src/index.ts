@@ -308,3 +308,4 @@ export {
   type TransactionManager,
   transactional,
 } from './transaction'
+export type { WebSocketConnection, WebSocketRoute } from './websocket'
