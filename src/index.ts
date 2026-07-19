@@ -248,6 +248,11 @@ export {
 } from './session'
 export { type StaticOptions, serveStatic } from './static'
 export {
+  Totp,
+  type TotpAlgorithm,
+  type TotpOptions,
+} from './totp'
+export {
   TRANSACTION_MANAGER,
   type TransactionManager,
   transactional,
