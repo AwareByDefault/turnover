@@ -63,13 +63,8 @@
     },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist",
-    "src"
-  ],
-  "sideEffects": [
-    "./dist/metadata.js"
-  ],
+  "files": ["dist", "src"],
+  "sideEffects": ["./dist/metadata.js"],
   "scripts": {
     "dev": "bun run --watch example/index.ts",
     "build": "tsc -p tsconfig.build.json",
