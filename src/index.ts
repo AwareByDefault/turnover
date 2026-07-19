@@ -18,6 +18,7 @@ export {
   type BodyParser,
   type CreateAppOptions,
   createApp,
+  type DocsOptions,
   type FetchHandler,
   type ListenOptions,
   type Plugin,
