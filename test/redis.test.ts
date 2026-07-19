@@ -1,25 +1,29 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  CACHE_STORE,
+  cacheable,
   controller,
   createApp,
   get,
   inject,
+  injectable,
   Passwordless,
   post,
   Session,
   session,
 } from '../src'
 import {
-  type RedisClient,
+  type RedisCacheClient,
+  redisCacheStore,
   redisOtpStore,
   redisSessionStore,
 } from '../src/redis'
 
-// A minimal in-memory RedisClient stand-in that records TTLs.
+// A minimal in-memory RedisCacheClient stand-in that records TTLs.
 function fakeRedis() {
   const store = new Map<string, string>()
   const ttls = new Map<string, number>()
-  const client: RedisClient = {
+  const client: RedisCacheClient = {
     async get(key) {
       return store.get(key) ?? null
     },
@@ -31,6 +35,10 @@ function fakeRedis() {
     },
     async expire(key, seconds) {
       ttls.set(key, seconds)
+    },
+    async keys(pattern) {
+      const rx = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`)
+      return [...store.keys()].filter((key) => rx.test(key))
     },
   }
   return { client, store, ttls }
@@ -108,5 +116,52 @@ describe('redisOtpStore()', () => {
     expect(await otp.verify('ada@acme.io', code)).toBe(true)
     // Consumed on success — the entry is gone from Redis.
     expect(redis.store.size).toBe(0)
+  })
+})
+
+describe('redisCacheStore()', () => {
+  test('round-trips values, applies TTL, and deletes', async () => {
+    const redis = fakeRedis()
+    const store = redisCacheStore(redis.client, { prefix: 'c:' })
+    await store.set('k', { a: 1 }, 5000)
+    expect(redis.ttls.get('c:k')).toBe(5) // ceil(5000ms / 1000)
+    expect(await store.get('k')).toEqual({ a: 1 })
+    await store.delete('k')
+    expect(await store.get('k')).toBeUndefined()
+  })
+
+  test('clear() removes only this store’s prefixed keys', async () => {
+    const redis = fakeRedis()
+    redis.store.set('other:keep', '"x"')
+    const store = redisCacheStore(redis.client, { prefix: 'turnover:cache:' })
+    await store.set('a', 1)
+    await store.set('b', 2)
+    await store.clear()
+    expect(await store.get('a')).toBeUndefined()
+    expect(redis.store.get('other:keep')).toBe('"x"') // untouched
+  })
+
+  test('backs @cacheable over the container', async () => {
+    let calls = 0
+    @injectable()
+    class Widgets {
+      @cacheable()
+      make(kind: string) {
+        calls += 1
+        return `widget:${kind}`
+      }
+    }
+    const redis = fakeRedis()
+    const app = await createApp({
+      controllers: [],
+      providers: [
+        { provide: CACHE_STORE, useValue: redisCacheStore(redis.client) },
+      ],
+    })
+    const widgets = app.container.resolve(Widgets)
+    expect(await widgets.make('bolt')).toBe('widget:bolt')
+    expect(await widgets.make('bolt')).toBe('widget:bolt')
+    expect(calls).toBe(1) // second call served from Redis
+    expect(redis.store.size).toBe(1)
   })
 })

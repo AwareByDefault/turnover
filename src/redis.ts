@@ -4,6 +4,7 @@
 // satisfies the small `RedisClient` interface (Bun's built-in redis, ioredis,
 // node-redis, …) — turnover never imports a Redis library.
 
+import type { CacheStore } from './cache'
 import type { OtpRecord, OtpStore } from './passwordless'
 import type { SessionData, SessionStore } from './session'
 
@@ -14,6 +15,11 @@ export interface RedisClient {
   del(key: string): Promise<unknown>
   /** Set a key's time-to-live in seconds. */
   expire(key: string, seconds: number): Promise<unknown>
+}
+
+/** A {@link RedisClient} that can also enumerate keys — needed to clear the cache. */
+export interface RedisCacheClient extends RedisClient {
+  keys(pattern: string): Promise<string[]>
 }
 
 /** Options for {@link redisSessionStore}. */
@@ -52,6 +58,49 @@ export function redisSessionStore(
     },
     async destroy(id) {
       await client.del(prefix + id)
+    },
+  }
+}
+
+/** Options for {@link redisCacheStore}. */
+export interface RedisCacheStoreOptions {
+  /** Key prefix (default `"turnover:cache:"`). */
+  prefix?: string
+}
+
+/**
+ * A {@link CacheStore} backed by Redis — a shared backend for `@cacheable`
+ * across replicas. Values are JSON-encoded with a per-entry TTL; `clear()`
+ * removes only this store's prefixed keys (via `KEYS`, so reserve it for
+ * eviction, not a hot path).
+ *
+ * ```ts
+ * createApp({ providers: [{ provide: CACHE_STORE, useValue: redisCacheStore(redis) }] })
+ * ```
+ */
+export function redisCacheStore(
+  client: RedisCacheClient,
+  options: RedisCacheStoreOptions = {},
+): CacheStore {
+  const prefix = options.prefix ?? 'turnover:cache:'
+  return {
+    async get(key) {
+      const raw = await client.get(prefix + key)
+      return raw ? JSON.parse(raw) : undefined
+    },
+    async set(key, value, ttlMs) {
+      const redisKey = prefix + key
+      await client.set(redisKey, JSON.stringify(value))
+      if (ttlMs !== undefined) {
+        await client.expire(redisKey, Math.max(1, Math.ceil(ttlMs / 1000)))
+      }
+    },
+    async delete(key) {
+      await client.del(prefix + key)
+    },
+    async clear() {
+      const keys = await client.keys(`${prefix}*`)
+      await Promise.all(keys.map((key) => client.del(key)))
     },
   }
 }

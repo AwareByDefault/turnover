@@ -115,10 +115,11 @@ describe('@cacheable / @cacheEvict', () => {
   test('memoizes by arguments', async () => {
     calls = 0
     const svc = (await freshApp()).container.resolve(Numbers)
-    expect(svc.square(4)).toBe(16)
-    expect(svc.square(4)).toBe(16)
+    // The store is async, so a @cacheable method returns a Promise.
+    expect(await svc.square(4)).toBe(16)
+    expect(await svc.square(4)).toBe(16)
     expect(calls).toBe(1) // second call served from cache
-    expect(svc.square(5)).toBe(25)
+    expect(await svc.square(5)).toBe(25)
     expect(calls).toBe(2) // different arg → recomputed
   })
 
@@ -133,17 +134,17 @@ describe('@cacheable / @cacheEvict', () => {
   test('keyBy controls the cache key', async () => {
     calls = 0
     const svc = (await freshApp()).container.resolve(Numbers)
-    svc.byUser({ id: 'x', extra: 1 })
-    svc.byUser({ id: 'x', extra: 2 }) // same id → same key → cache hit
+    await svc.byUser({ id: 'x', extra: 1 })
+    await svc.byUser({ id: 'x', extra: 2 }) // same id → same key → cache hit
     expect(calls).toBe(1)
   })
 
   test('@cacheEvict clears the cache', async () => {
     calls = 0
     const svc = (await freshApp()).container.resolve(Numbers)
-    svc.square(4) // calls = 1
-    svc.clearAll()
-    svc.square(4) // recompute → calls = 2
+    await svc.square(4) // calls = 1
+    await svc.clearAll()
+    await svc.square(4) // recompute → calls = 2
     expect(calls).toBe(2)
   })
 })
