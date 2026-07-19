@@ -61,6 +61,7 @@ export {
   type ClientResult,
   createClient,
 } from './client'
+export { type CompressionOptions, compression } from './compression'
 export {
   ACTIVE_PROFILES,
   CONFIG_SOURCE,
