@@ -19,6 +19,7 @@ export {
   type CreateAppOptions,
   createApp,
   type FetchHandler,
+  type ListenOptions,
   type Plugin,
   type RequestHook,
   type ResponseHook,
