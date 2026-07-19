@@ -191,4 +191,5 @@ export {
   TRANSACTION_MANAGER,
   type TransactionManager,
   transactional,
+  transactionalProcessor,
 } from './transaction'

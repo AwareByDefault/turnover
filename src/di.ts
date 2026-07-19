@@ -4,6 +4,7 @@ import {
   metadataOf,
   POST_CONSTRUCT,
   PRE_DESTROY,
+  REPOSITORY,
   SCOPE,
 } from './metadata'
 import { getRequestState } from './request'
@@ -346,8 +347,18 @@ export function injectable(options: { scope?: Scope } = {}) {
 /** Stereotype alias for `@injectable` — marks a service-layer component. */
 export const service = injectable
 
-/** Stereotype alias for `@injectable` — marks a persistence/DAO component. */
-export const repository = injectable
+/**
+ * Stereotype for a persistence/DAO component. Like `@injectable`, but every one
+ * of the class's own methods additionally runs inside the bound
+ * `TransactionManager` (as if each were `@transactional`) — annotating the
+ * intent earns the unit-of-work behavior. With no manager bound it is a no-op.
+ */
+export function repository(options: { scope?: Scope } = {}) {
+  return (_value: Ctor, context: ClassDecoratorContext): void => {
+    ctxMeta(context)[SCOPE] = options.scope ?? 'singleton'
+    ctxMeta(context)[REPOSITORY] = true
+  }
+}
 
 /**
  * Method decorator: run this method right after the container constructs the

@@ -63,6 +63,7 @@ export const TRANSACTIONAL = Symbol('aware.transactional')
 export const CACHEABLE = Symbol('aware.cacheable')
 export const CACHE_EVICT = Symbol('aware.cacheEvict')
 export const SCHEDULED = Symbol('aware.scheduled')
+export const REPOSITORY = Symbol('aware.repository')
 
 /**
  * A decorator-metadata bag — the shared `Symbol.metadata` object that every
