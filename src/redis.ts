@@ -5,6 +5,7 @@
 // node-redis, …) — turnover never imports a Redis library.
 
 import type { CacheStore } from './cache'
+import type { Job, JobStore } from './jobs'
 import type { OtpRecord, OtpStore } from './passwordless'
 import type { SessionData, SessionStore } from './session'
 
@@ -20,6 +21,13 @@ export interface RedisClient {
 /** A {@link RedisClient} that can also enumerate keys — needed to clear the cache. */
 export interface RedisCacheClient extends RedisClient {
   keys(pattern: string): Promise<string[]>
+}
+
+/** Redis hash commands, used to store the job set under a single key. */
+export interface RedisJobClient {
+  hset(key: string, field: string, value: string): Promise<unknown>
+  hgetall(key: string): Promise<Record<string, string>>
+  hdel(key: string, field: string): Promise<unknown>
 }
 
 /** Options for {@link redisSessionStore}. */
@@ -141,6 +149,58 @@ export function redisOtpStore(
     },
     async delete(identifier) {
       await client.del(prefix + identifier)
+    },
+  }
+}
+
+/** Options for {@link redisJobStore}. */
+export interface RedisJobStoreOptions {
+  /** Hash key the job set lives under (default `"turnover:jobs"`). */
+  key?: string
+}
+
+/**
+ * A {@link JobStore} backed by a single Redis hash — durable, shared background
+ * jobs across replicas. Each job is a field in the hash; `due`/`failed`/`pending`
+ * read the hash and filter in memory (like the in-memory default), and completed
+ * jobs are removed so the hash doesn't grow without bound. Fine for modest job
+ * volumes; a high-throughput queue wants a purpose-built broker.
+ *
+ * ```ts
+ * const jobs = new JobQueue({ store: redisJobStore(redis) })
+ * ```
+ */
+export function redisJobStore(
+  client: RedisJobClient,
+  options: RedisJobStoreOptions = {},
+): JobStore {
+  const key = options.key ?? 'turnover:jobs'
+  const all = async (): Promise<Job[]> => {
+    const map = await client.hgetall(key)
+    return Object.values(map).map((raw) => JSON.parse(raw) as Job)
+  }
+  return {
+    async add(job) {
+      await client.hset(key, job.id, JSON.stringify(job))
+    },
+    async save(job) {
+      // Completed jobs are done — drop them rather than accumulate.
+      if (job.status === 'completed') {
+        await client.hdel(key, job.id)
+        return
+      }
+      await client.hset(key, job.id, JSON.stringify(job))
+    },
+    async due(now) {
+      return (await all())
+        .filter((job) => job.status === 'pending' && job.runAt <= now)
+        .sort((a, b) => a.runAt - b.runAt)
+    },
+    async failed() {
+      return (await all()).filter((job) => job.status === 'failed')
+    },
+    async pending() {
+      return (await all()).filter((job) => job.status === 'pending').length
     },
   }
 }

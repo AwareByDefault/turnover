@@ -7,6 +7,7 @@ import {
   get,
   inject,
   injectable,
+  JobQueue,
   Passwordless,
   post,
   Session,
@@ -14,10 +15,29 @@ import {
 } from '../src'
 import {
   type RedisCacheClient,
+  type RedisJobClient,
   redisCacheStore,
+  redisJobStore,
   redisOtpStore,
   redisSessionStore,
 } from '../src/redis'
+
+// An in-memory RedisJobClient stand-in over a single hash.
+function fakeRedisJobs() {
+  const hash = new Map<string, string>()
+  const client: RedisJobClient = {
+    async hset(_key, field, value) {
+      hash.set(field, value)
+    },
+    async hgetall(_key) {
+      return Object.fromEntries(hash)
+    },
+    async hdel(_key, field) {
+      hash.delete(field)
+    },
+  }
+  return { client, hash }
+}
 
 // A minimal in-memory RedisCacheClient stand-in that records TTLs.
 function fakeRedis() {
@@ -163,5 +183,47 @@ describe('redisCacheStore()', () => {
     expect(await widgets.make('bolt')).toBe('widget:bolt')
     expect(calls).toBe(1) // second call served from Redis
     expect(redis.store.size).toBe(1)
+  })
+})
+
+describe('redisJobStore()', () => {
+  test('backs a real JobQueue run to completion', async () => {
+    const redis = fakeRedisJobs()
+    const queue = new JobQueue({
+      store: redisJobStore(redis.client),
+      clock: () => 1000,
+    })
+    const seen: string[] = []
+    queue.on<{ to: string }>('email', (payload) => {
+      seen.push(payload.to)
+    })
+    await queue.enqueue('email', { to: 'ada@acme.io' })
+    // The job is durably in the Redis hash while pending.
+    expect(redis.hash.size).toBe(1)
+    expect(await queue.pending()).toBe(1)
+
+    expect(await queue.process(1000)).toBe(1)
+    expect(seen).toEqual(['ada@acme.io'])
+    // Completed jobs are removed from the hash.
+    expect(redis.hash.size).toBe(0)
+    expect(await queue.pending()).toBe(0)
+  })
+
+  test('keeps a dead-lettered job queryable in Redis', async () => {
+    const redis = fakeRedisJobs()
+    const queue = new JobQueue({
+      store: redisJobStore(redis.client),
+      clock: () => 1000,
+      backoff: () => 0,
+    })
+    queue.on('doomed', () => {
+      throw new Error('nope')
+    })
+    await queue.enqueue('doomed', {}, { maxAttempts: 1 })
+    await queue.process(1000)
+    const failed = await queue.failed()
+    expect(failed).toHaveLength(1)
+    expect(failed[0]?.lastError).toBe('nope')
+    expect(redis.hash.size).toBe(1) // still stored (not completed)
   })
 })
