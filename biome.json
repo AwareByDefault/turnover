@@ -1,0 +1,165 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!**/.agents/",
+      "!**/.claude/",
+      "!**/.github/",
+      "!**/.vscode/",
+      "!dist/",
+      "!test/.scan-fixture/"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "formatWithErrors": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80,
+    "attributePosition": "auto",
+    "bracketSameLine": true,
+    "bracketSpacing": true,
+    "expand": "auto",
+    "useEditorconfig": true
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "nursery": {
+        "noFloatingPromises": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "off"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
+      },
+      "performance": {
+        "noReExportAll": "error"
+      },
+      "style": {
+        "noDefaultExport": "error",
+        "noNestedTernary": "error",
+        "noNonNullAssertion": "error",
+        "noParameterAssign": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "reflect-metadata": "turnover uses standard TC39 decorators only — never reflect-metadata, emitDecoratorMetadata, or design-type reflection. See coding-best-practices.md §2.",
+              "@opentelemetry/api": "Optional peer dependency — import only inside src/otel.ts (the turnover/otel subpath), never the core. See coding-best-practices.md §3.2.",
+              "@opentelemetry/sdk-trace-base": "The OpenTelemetry SDK is a dev/test-only dependency — never import it in src/; the framework depends solely on the stable @opentelemetry/api. See coding-best-practices.md §3.2.",
+              "@opentelemetry/context-async-hooks": "The OpenTelemetry SDK is a dev/test-only dependency — never import it in src/. See coding-best-practices.md §3.2.",
+              "@opentelemetry/core": "The OpenTelemetry SDK is a dev/test-only dependency — never import it in src/. See coding-best-practices.md §3.2."
+            }
+          }
+        },
+        "useConsistentBuiltinInstantiation": "error",
+        "useImportType": "error",
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "strictCase": false,
+            "requireAscii": true,
+            "conventions": [
+              {
+                "selector": { "kind": "objectLiteralProperty" },
+                "match": ".*"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "jsxQuoteStyle": "double",
+      "quoteProperties": "asNeeded",
+      "trailingCommas": "all",
+      "semicolons": "asNeeded",
+      "arrowParentheses": "always",
+      "bracketSameLine": true,
+      "quoteStyle": "single",
+      "attributePosition": "auto",
+      "bracketSpacing": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.d.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/otel.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "reflect-metadata": "turnover uses standard TC39 decorators only. See coding-best-practices.md §2.",
+                  "@opentelemetry/sdk-trace-base": "src/otel.ts depends solely on the stable @opentelemetry/api — never the SDK. See coding-best-practices.md §3.2.",
+                  "@opentelemetry/context-async-hooks": "src/otel.ts depends solely on the stable @opentelemetry/api — never the SDK. See coding-best-practices.md §3.2.",
+                  "@opentelemetry/core": "src/otel.ts depends solely on the stable @opentelemetry/api — never the SDK. See coding-best-practices.md §3.2."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.test.ts", "**/*.test-d.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off",
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "reflect-metadata": "turnover uses standard TC39 decorators only — tests included. See coding-best-practices.md §2."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/index.ts"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noReExportAll": "off"
+          }
+        }
+      }
+    }
+  ],
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}
