@@ -30,7 +30,15 @@ export {
   type TraceEvent,
   type TraceHook,
 } from './app'
-export { Auth, type Principal, requireAuth } from './auth'
+export {
+  Auth,
+  authenticated,
+  authorize,
+  type Principal,
+  requireAuth,
+  requireRole,
+  requireScope,
+} from './auth'
 export {
   CACHE_STORE,
   type CacheableOptions,
