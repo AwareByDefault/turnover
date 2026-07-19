@@ -78,6 +78,7 @@ export {
 } from './config'
 export { type CookieOptions, Cookies } from './cookies'
 export { type CorsOptions, cors } from './cors'
+export { type CsrfOptions, csrf } from './csrf'
 export {
   Container,
   InjectionToken,
