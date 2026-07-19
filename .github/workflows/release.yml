@@ -134,6 +134,11 @@ jobs:
           # deleted — but the version is NOT bumped, so capture it either side.
           prev_version="$(bun --print "require('./package.json').version")"
           bun run changeset:version
+          # `changeset version` rewrites package.json with its own JSON printer
+          # (which expands arrays like `files`/`sideEffects` one-per-line); reformat
+          # it to Biome's style so the committed file matches `lint` and the next
+          # feature branch doesn't inherit a spurious package.json diff.
+          bunx biome format --write package.json
           new_version="$(bun --print "require('./package.json').version")"
 
           git add -A
