@@ -162,6 +162,16 @@ export {
   type MetaBag,
   metadataOf as classMeta,
 } from './metadata'
+export {
+  Counter,
+  DEFAULT_BUCKETS,
+  Gauge,
+  Histogram,
+  type Labels,
+  type MetricsOptions,
+  MetricsRegistry,
+  metrics,
+} from './metrics'
 export { type ModuleOptions, module } from './module'
 export type {
   OpenApiDocument,
