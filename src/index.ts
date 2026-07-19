@@ -246,6 +246,12 @@ export {
   type SessionStore,
   session,
 } from './session'
+export {
+  SseChannel,
+  type SseEvent,
+  type SseOptions,
+  sse,
+} from './sse'
 export { type StaticOptions, serveStatic } from './static'
 export {
   Totp,
