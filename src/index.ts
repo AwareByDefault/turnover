@@ -40,6 +40,14 @@ export {
   requireScope,
 } from './auth'
 export {
+  type ApiKeyOptions,
+  type AuthScheme,
+  apiKey,
+  authentication,
+  type BearerOptions,
+  bearer,
+} from './authentication'
+export {
   CACHE_STORE,
   type CacheableOptions,
   type CacheStore,
