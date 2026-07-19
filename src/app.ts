@@ -209,6 +209,32 @@ export interface ListenOptions {
   signals?: boolean
 }
 
+/** Options for {@link App.docs}. */
+export interface DocsOptions {
+  /** Path serving the OpenAPI JSON. Default `/openapi.json`. */
+  jsonPath?: string
+  /** Path serving the docs UI, or `false` to disable it. Default `/docs`. */
+  uiPath?: string | false
+  /** OpenAPI options passed to {@link App.openapi}. */
+  openapi?: OpenApiOptions
+}
+
+function docsHtml(specPath: string): string {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API Reference</title>
+  </head>
+  <body>
+    <script id="api-reference" data-url="${specPath}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>
+`
+}
+
 /** A request augmented with the path params matched from its route pattern. */
 type ParamRequest = Request & { params: Record<string, string> }
 type RouteHandler = (req: ParamRequest) => Promise<Response>
@@ -978,6 +1004,35 @@ export class App {
    */
   openapi(options?: OpenApiOptions): OpenApiDocument {
     return buildOpenApi(this.operations, options)
+  }
+
+  /**
+   * Serve the OpenAPI document and an interactive docs page. Mounts
+   * `GET /openapi.json` (the spec from {@link openapi}) and, unless disabled,
+   * `GET /docs` (an API reference UI). Chain it after `createApp`:
+   *
+   * ```ts
+   * const app = (await createApp()).docs()
+   * app.listen() // GET /openapi.json and /docs are live
+   * ```
+   */
+  docs(options: DocsOptions = {}): this {
+    const jsonPath = options.jsonPath ?? '/openapi.json'
+    const uiPath =
+      options.uiPath === false ? undefined : (options.uiPath ?? '/docs')
+    this.onRequest((req) => {
+      const path = new URL(req.url).pathname
+      if (path === jsonPath) {
+        return Response.json(this.openapi(options.openapi))
+      }
+      if (uiPath !== undefined && path === uiPath) {
+        return new Response(docsHtml(jsonPath), {
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        })
+      }
+      return undefined
+    })
+    return this
   }
 
   /**
