@@ -1,5 +1,17 @@
 # turnover
 
+## 0.25.0
+
+### Minor Changes
+
+- 32200d3: Add `sse()` — build a streaming `text/event-stream` response from an async
+  source, returnable straight from a route handler. Accepts an async generator (or
+  any async iterable) of `SseEvent`s (`data`/`event`/`id`/`retry`), serializing
+  each to the wire format (string payloads verbatim, others JSON, multi-line
+  payloads split across `data:` lines) with an optional comment heartbeat. Ships
+  `SseChannel`, a push-driven async source for event-bus/pub-sub streams that
+  drains queued events before closing.
+
 ## 0.24.0
 
 ### Minor Changes
