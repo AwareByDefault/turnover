@@ -173,6 +173,12 @@ export {
   metrics,
 } from './metrics'
 export { type ModuleOptions, module } from './module'
+export {
+  type MultipartBody,
+  type MultipartOptions,
+  multipart,
+  UploadedFile,
+} from './multipart'
 export type {
   OpenApiDocument,
   OpenApiInfo,
