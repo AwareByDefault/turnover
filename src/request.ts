@@ -19,6 +19,8 @@ export interface RequestStore {}
 export interface RequestState {
   readonly req: Request
   principal: Principal | null
+  /** Correlation id for this request (set by the `requestId()` plugin). */
+  requestId?: string
   /** Per-request values populated by derivers; also exposed as `ctx.store`. */
   store: RequestStore
   /** Cache of `scope: "request"` instances, one set per request. */
@@ -52,4 +54,15 @@ export function setPrincipal(principal: Principal): void {
     throw new Error('setPrincipal() was called outside a request context.')
   }
   state.principal = principal
+}
+
+/** The current request's correlation id, or `undefined` outside a request. */
+export function getRequestId(): string | undefined {
+  return storage.getStore()?.requestId
+}
+
+/** Set the current request's correlation id (called by the `requestId()` plugin). */
+export function setRequestId(id: string): void {
+  const state = storage.getStore()
+  if (state) state.requestId = id
 }

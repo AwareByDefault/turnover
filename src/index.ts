@@ -140,12 +140,15 @@ export type {
   OperationMeta,
 } from './openapi'
 export {
+  getRequestId,
   getRequestState,
   getRequestStore,
   type RequestState,
   type RequestStore,
   setPrincipal,
+  setRequestId,
 } from './request'
+export { type RequestIdOptions, requestId } from './request-id'
 export {
   type ScheduledOptions,
   Scheduler,
