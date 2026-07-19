@@ -6,6 +6,7 @@ import {
   createApp,
   injectable,
   MemoryCache,
+  repository,
   TRANSACTION_MANAGER,
   type TransactionManager,
   transactional,
@@ -75,6 +76,43 @@ describe('@transactional', () => {
   test('non-transactional methods are untouched', async () => {
     const app = await createApp({ controllers: [] })
     expect(app.container.resolve(OrderService).plain()).toBe('plain')
+  })
+})
+
+@repository()
+class ItemRepo {
+  private readonly items = new Map<string, string>()
+  save(id: string, value: string) {
+    this.items.set(id, value)
+    return value
+  }
+  get(id: string) {
+    return this.items.get(id)
+  }
+}
+
+describe('@repository (transactional by default)', () => {
+  test('runs every method in the bound TransactionManager', async () => {
+    const tm = new RecordingTM()
+    const app = await createApp({
+      controllers: [],
+      providers: [{ provide: TRANSACTION_MANAGER, useValue: tm }],
+    })
+    const repo = app.container.resolve(ItemRepo)
+    expect(await repo.save('1', 'a')).toBe('a')
+    expect(await repo.get('1')).toBe('a')
+    // Both methods ran inside their own unit of work.
+    expect(tm.log).toEqual(['begin', 'commit', 'begin', 'commit'])
+  })
+
+  test('with no manager bound, methods stay synchronous (no async footgun)', async () => {
+    const app = await createApp({ controllers: [] })
+    const repo = app.container.resolve(ItemRepo)
+    // No transaction to run → the sync method returns its value directly.
+    const saved: unknown = repo.save('2', 'b')
+    expect(saved instanceof Promise).toBe(false)
+    expect(saved).toBe('b')
+    expect(repo.get('2')).toBe('b')
   })
 })
 

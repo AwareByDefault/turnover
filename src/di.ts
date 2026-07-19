@@ -5,6 +5,7 @@ import {
   POST_CONSTRUCT,
   PRE_DESTROY,
   SCOPE,
+  TRANSACTIONAL,
 } from './metadata'
 import { getRequestState } from './request'
 
@@ -346,8 +347,32 @@ export function injectable(options: { scope?: Scope } = {}) {
 /** Stereotype alias for `@injectable` — marks a service-layer component. */
 export const service = injectable
 
-/** Stereotype alias for `@injectable` — marks a persistence/DAO component. */
-export const repository = injectable
+/**
+ * Stereotype for a persistence/DAO component: injectable, and **transactional by
+ * default** — every instance method runs inside the bound `TransactionManager`
+ * (committing on success, rolling back on throw), so a repository is a unit of
+ * work without annotating each method. When no manager is bound there is no
+ * transaction to run and methods pass through unchanged (staying synchronous);
+ * once one is bound, methods run in it and return promises. Use `@service` or
+ * `@injectable` for a non-transactional component.
+ */
+export function repository(options: { scope?: Scope } = {}) {
+  return (value: Ctor, context: ClassDecoratorContext): void => {
+    const meta = ctxMeta(context)
+    meta[SCOPE] = options.scope ?? 'singleton'
+    const transactional =
+      (meta[TRANSACTIONAL] as Set<PropertyKey> | undefined) ??
+      new Set<PropertyKey>()
+    for (const name of Object.getOwnPropertyNames(value.prototype)) {
+      if (name === 'constructor') continue
+      const descriptor = Object.getOwnPropertyDescriptor(value.prototype, name)
+      if (descriptor && typeof descriptor.value === 'function') {
+        transactional.add(name)
+      }
+    }
+    meta[TRANSACTIONAL] = transactional
+  }
+}
 
 /**
  * Method decorator: run this method right after the container constructs the

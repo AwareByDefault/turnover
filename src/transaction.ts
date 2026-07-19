@@ -16,8 +16,9 @@ const NOOP_MANAGER: TransactionManager = { run: async (fn) => fn() }
 
 /**
  * Method decorator: run this method inside a transaction from the bound
- * `TransactionManager` (commit on success, roll back on error). The method's
- * result becomes a `Promise`.
+ * `TransactionManager` (commit on success, roll back on error) — the result
+ * becomes a `Promise`. With no manager bound there is no transaction to run, so
+ * the method executes as-is (a synchronous method stays synchronous).
  */
 export function transactional(
   _value: unknown,
@@ -50,6 +51,10 @@ export function transactionalProcessor(container: Container): PostProcessor {
               TRANSACTION_MANAGER,
               NOOP_MANAGER,
             )
+            // No real manager → nothing to run in; call through so a synchronous
+            // method stays synchronous (this is what keeps @repository from
+            // making every DAO call async when transactions aren't configured).
+            if (manager === NOOP_MANAGER) return fn.apply(target, args)
             return manager.run(() => fn.apply(target, args))
           }
         }
