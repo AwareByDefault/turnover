@@ -1,4 +1,5 @@
 import type { Plugin, RequestHook } from './app'
+import { type Container, InjectionToken } from './di'
 
 /** A single readiness check. */
 export interface HealthCheck {
@@ -7,6 +8,20 @@ export interface HealthCheck {
   /** Return truthy if healthy; a falsy result or a throw marks it down. */
   check: () => boolean | Promise<boolean>
 }
+
+/**
+ * Multi-injection token for readiness checks. Bind a {@link HealthCheck} (a
+ * value or an `@injectable` class that implements it) as a provider and
+ * {@link health} collects every one it finds, alongside any passed explicitly.
+ *
+ * ```ts
+ * createApp({
+ *   providers: [{ provide: HEALTH_CHECK, useClass: DbHealth }],
+ *   plugins: [health()],
+ * })
+ * ```
+ */
+export const HEALTH_CHECK = new InjectionToken<HealthCheck>('HEALTH_CHECK')
 
 /** Options for the {@link health} plugin. */
 export interface HealthOptions {
@@ -20,9 +35,10 @@ export interface HealthOptions {
 
 /**
  * Plugin: mount liveness and readiness probes. `/health` answers `200` whenever
- * the process is serving (liveness). `/ready` runs every registered check and
- * answers `200` when all pass or `503` when any fails (readiness), with a
- * per-check breakdown — the shape a load balancer or orchestrator expects.
+ * the process is serving (liveness). `/ready` runs every check — those passed in
+ * {@link HealthOptions.checks} plus any {@link HEALTH_CHECK} providers bound in
+ * the container — and answers `200` when all pass or `503` when any fails, with
+ * a per-check breakdown — the shape a load balancer or orchestrator expects.
  *
  * ```ts
  * const app = await createApp({
@@ -34,7 +50,13 @@ export interface HealthOptions {
 export function health(options: HealthOptions = {}): Plugin {
   const liveness = options.livenessPath ?? '/health'
   const readiness = options.readinessPath ?? '/ready'
-  const checks = options.checks ?? []
+  const explicit = options.checks ?? []
+  // Filled at registration from any HEALTH_CHECK providers bound in the container.
+  let collected: HealthCheck[] = []
+
+  const onInit = (container: Container) => {
+    collected = container.resolveAll(HEALTH_CHECK)
+  }
 
   const onRequest: RequestHook = async (req) => {
     const path = new URL(req.url).pathname
@@ -42,6 +64,7 @@ export function health(options: HealthOptions = {}): Plugin {
       return Response.json({ status: 'up' })
     }
     if (path === readiness) {
+      const checks = [...explicit, ...collected]
       const results = await Promise.all(
         checks.map(async (item) => {
           let up = false
@@ -62,5 +85,5 @@ export function health(options: HealthOptions = {}): Plugin {
     return undefined
   }
 
-  return { onRequest }
+  return { onInit, onRequest }
 }

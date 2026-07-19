@@ -127,6 +127,12 @@ export interface ResponseSerializer {
 
 /** A bundle of hooks registered together (e.g. what `cors()` returns). */
 export interface Plugin {
+  /**
+   * Runs once when the plugin is registered, with the app's container — after
+   * `providers` are bound, before requests. The place to resolve DI-registered
+   * collaborators (e.g. `container.resolveAll(TOKEN)`).
+   */
+  onInit?: (container: Container) => void
   onRequest?: RequestHook | RequestHook[]
   onResponse?: ResponseHook | ResponseHook[]
   onAfterResponse?: AfterResponseHook | AfterResponseHook[]
@@ -594,6 +600,7 @@ export class App {
 
   /** Register a plugin — a bundle of hooks (e.g. `cors(...)`). */
   register(plugin: Plugin): this {
+    if (plugin.onInit) plugin.onInit(this.container)
     if (plugin.onRequest) this.onRequest(...asArray(plugin.onRequest))
     if (plugin.onResponse) this.onResponse(...asArray(plugin.onResponse))
     if (plugin.onAfterResponse)

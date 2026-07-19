@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { createApp, health } from '../src'
+import {
+  createApp,
+  HEALTH_CHECK,
+  type HealthCheck,
+  health,
+  inject,
+  injectable,
+} from '../src'
 
 describe('health()', () => {
   test('/health answers 200 up (liveness)', async () => {
@@ -71,5 +78,61 @@ describe('health()', () => {
     expect((await app.handle(new Request('http://t/nope-xyz'))).status).toBe(
       404,
     )
+  })
+
+  test('collects HEALTH_CHECK providers from the container (value + class)', async () => {
+    @injectable()
+    class Db {
+      ping() {
+        return true
+      }
+    }
+    @injectable()
+    class DbHealth implements HealthCheck {
+      private readonly db = inject(Db)
+      name = 'db'
+      check() {
+        return this.db.ping()
+      }
+    }
+    const app = await createApp({
+      controllers: [],
+      providers: [
+        {
+          provide: HEALTH_CHECK,
+          useValue: { name: 'disk', check: () => true },
+        },
+        { provide: HEALTH_CHECK, useClass: DbHealth },
+      ],
+      plugins: [health()],
+    })
+    const res = await app.handle(new Request('http://t/ready'))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      status: string
+      checks: Array<{ name: string; status: string }>
+    }
+    expect(body.checks).toContainEqual({ name: 'disk', status: 'up' })
+    expect(body.checks).toContainEqual({ name: 'db', status: 'up' }) // injected Db
+  })
+
+  test('merges explicit checks with DI-collected ones, and 503s on a failure', async () => {
+    const app = await createApp({
+      controllers: [],
+      providers: [
+        {
+          provide: HEALTH_CHECK,
+          useValue: { name: 'redis', check: () => false },
+        },
+      ],
+      plugins: [health({ checks: [{ name: 'inline', check: () => true }] })],
+    })
+    const res = await app.handle(new Request('http://t/ready'))
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as {
+      checks: Array<{ name: string; status: string }>
+    }
+    expect(body.checks).toContainEqual({ name: 'inline', status: 'up' })
+    expect(body.checks).toContainEqual({ name: 'redis', status: 'down' })
   })
 })
