@@ -121,6 +121,14 @@ export {
   type ValidatedInputs,
 } from './http'
 export {
+  LOG_LEVEL,
+  LOG_SINK,
+  Logger,
+  type LogLevel,
+  type LogRecord,
+  type LogSink,
+} from './logger'
+export {
   defineMacro,
   type MacroFactory,
   type MacroHooks,
