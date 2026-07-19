@@ -156,6 +156,7 @@ export {
   pageParams,
   paginated,
 } from './pagination'
+export { type ProblemDocument, problemDetails } from './problem-details'
 export {
   getRequestId,
   getRequestState,
