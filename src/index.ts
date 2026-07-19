@@ -289,6 +289,16 @@ export {
 } from './sse'
 export { type StaticOptions, serveStatic } from './static'
 export {
+  clearElevation,
+  elevate,
+  elevationAge,
+  getImpersonation,
+  type Impersonation,
+  impersonate,
+  requireStepUp,
+  stopImpersonation,
+} from './step-up'
+export {
   Totp,
   type TotpAlgorithm,
   type TotpOptions,
