@@ -177,6 +177,12 @@ export {
   pageParams,
   paginated,
 } from './pagination'
+export {
+  PASSWORD_OPTIONS,
+  type PasswordAlgorithm,
+  PasswordHasher,
+  type PasswordOptions,
+} from './password'
 export { type ProblemDocument, problemDetails } from './problem-details'
 export {
   memoryRateLimitStore,
