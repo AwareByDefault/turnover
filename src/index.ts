@@ -176,6 +176,12 @@ export {
 } from './pagination'
 export { type ProblemDocument, problemDetails } from './problem-details'
 export {
+  memoryRateLimitStore,
+  type RateLimitOptions,
+  type RateLimitStore,
+  rateLimit,
+} from './rate-limit'
+export {
   getRequestId,
   getRequestState,
   getRequestStore,
