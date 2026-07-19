@@ -198,6 +198,15 @@ export {
   multipart,
   UploadedFile,
 } from './multipart'
+export {
+  type AuthorizationRequest,
+  type ClientAuthMethod,
+  type FetchLike,
+  OAuth2Client,
+  type OAuth2Config,
+  OAuth2Error,
+  type TokenResponse,
+} from './oauth2'
 export type {
   OpenApiDocument,
   OpenApiInfo,
