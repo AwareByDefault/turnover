@@ -1,6 +1,6 @@
 {
   "name": "turnover",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Decorator-first REST framework for Bun — inject your dependencies, mount controllers, and let them rest.",
   "type": "module",
   "license": "MIT",
@@ -63,8 +63,13 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "src"],
-  "sideEffects": ["./dist/metadata.js"],
+  "files": [
+    "dist",
+    "src"
+  ],
+  "sideEffects": [
+    "./dist/metadata.js"
+  ],
   "scripts": {
     "dev": "bun run --watch example/index.ts",
     "build": "tsc -p tsconfig.build.json",
