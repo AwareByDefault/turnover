@@ -198,6 +198,17 @@ export interface CreateAppOptions {
   delegate?: Record<string, FetchHandler>
 }
 
+/** Options for {@link App.listen}. */
+export interface ListenOptions {
+  /** Bind address; defaults to the `HOST` env var, else all interfaces. */
+  hostname?: string
+  /**
+   * Install SIGTERM/SIGINT handlers that gracefully {@link App.stop} then exit
+   * with code 0. Default `true`. Set `false` to manage signals yourself.
+   */
+  signals?: boolean
+}
+
 /** A request augmented with the path params matched from its route pattern. */
 type ParamRequest = Request & { params: Record<string, string> }
 type RouteHandler = (req: ParamRequest) => Promise<Response>
@@ -569,6 +580,7 @@ export class App {
 
   /** Stop scheduled tasks, run `onStop` hooks, stop the server, run `@preDestroy`. */
   async stop(closeActiveConnections = false): Promise<void> {
+    this.removeSignalHandlers()
     this.scheduler.stop()
     for (const hook of this.stopHooks) {
       try {
@@ -973,9 +985,20 @@ export class App {
    * behavior matches in-memory `handle()` exactly. Returns Bun's `Server`
    * (`.stop()`, `.port`, `.url`, `.reload()`); pass `0` for an OS-assigned port.
    */
-  listen(port = 3000) {
-    this.server = Bun.serve({ port, fetch: (req) => this.handle(req) })
+  private sigHandlers?: { term: () => void; int: () => void }
+
+  listen(port?: number, options: ListenOptions = {}) {
+    const envPort = Bun.env.PORT
+    const resolvedPort =
+      port ?? (envPort !== undefined && envPort !== '' ? Number(envPort) : 3000)
+    const hostname = options.hostname ?? Bun.env.HOST ?? undefined
+    this.server = Bun.serve({
+      port: resolvedPort,
+      hostname,
+      fetch: (req) => this.handle(req),
+    })
     this.scheduler.start()
+    if (options.signals !== false) this.installSignalHandlers()
     for (const hook of this.startHooks) {
       try {
         const result = hook(this.server)
@@ -989,6 +1012,32 @@ export class App {
       }
     }
     return this.server
+  }
+
+  /** Install SIGTERM/SIGINT handlers that gracefully stop, then exit. */
+  private installSignalHandlers(): void {
+    if (this.sigHandlers) return
+    const term = () => this.gracefulExit('SIGTERM')
+    const int = () => this.gracefulExit('SIGINT')
+    this.sigHandlers = { term, int }
+    process.on('SIGTERM', term)
+    process.on('SIGINT', int)
+  }
+
+  /** Remove the signal handlers installed by {@link installSignalHandlers}. */
+  private removeSignalHandlers(): void {
+    if (!this.sigHandlers) return
+    process.off('SIGTERM', this.sigHandlers.term)
+    process.off('SIGINT', this.sigHandlers.int)
+    this.sigHandlers = undefined
+  }
+
+  private gracefulExit(signal: string): void {
+    console.error(`[turnover] ${signal} received — shutting down`)
+    this.stop().then(
+      () => process.exit(0),
+      () => process.exit(1),
+    )
   }
 }
 
