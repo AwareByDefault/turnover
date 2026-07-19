@@ -7,12 +7,15 @@ import {
   metadataOf,
 } from './metadata'
 
-/** A key/value cache with optional per-entry TTL. */
+/**
+ * A key/value cache with optional per-entry TTL. Async so a shared backend
+ * (Redis, a database) can back it; {@link MemoryCache} is the in-process default.
+ */
 export interface CacheStore {
-  get(key: string): unknown
-  set(key: string, value: unknown, ttlMs?: number): void
-  delete(key: string): void
-  clear(): void
+  get(key: string): Promise<unknown>
+  set(key: string, value: unknown, ttlMs?: number): Promise<void>
+  delete(key: string): Promise<void>
+  clear(): Promise<void>
 }
 
 /** Bind a cache backend here; defaults to an in-memory store. */
@@ -25,7 +28,7 @@ export class MemoryCache implements CacheStore {
     { value: unknown; expires: number }
   >()
 
-  get(key: string): unknown {
+  async get(key: string): Promise<unknown> {
     const entry = this.store.get(key)
     if (!entry) return undefined
     if (entry.expires !== 0 && entry.expires <= Date.now()) {
@@ -35,15 +38,15 @@ export class MemoryCache implements CacheStore {
     return entry.value
   }
 
-  set(key: string, value: unknown, ttlMs?: number): void {
+  async set(key: string, value: unknown, ttlMs?: number): Promise<void> {
     this.store.set(key, { value, expires: ttlMs ? Date.now() + ttlMs : 0 })
   }
 
-  delete(key: string): void {
+  async delete(key: string): Promise<void> {
     this.store.delete(key)
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.store.clear()
   }
 }
@@ -71,7 +74,9 @@ function cacheKey(opts: CacheableMeta, args: unknown[]): string {
 
 /**
  * Method decorator: memoize the method's result by its arguments in the bound
- * `CacheStore` (default in-memory). Async results are cached once resolved.
+ * `CacheStore` (default in-memory). Because the store is async, a `@cacheable`
+ * method always returns a `Promise` — `await` it even when the underlying body
+ * is synchronous.
  */
 export function cacheable(options: CacheableOptions = {}) {
   return (_value: unknown, context: ClassMethodDecoratorContext): void => {
@@ -118,25 +123,21 @@ export function cacheProcessor(container: Container): PostProcessor {
           typeof prop === 'string' ? cacheables?.get(prop) : undefined
 
         if (opts) {
-          return (...args: unknown[]) => {
+          // The store is async, so a @cacheable method always returns a Promise
+          // (it awaits the lookup) — call it with `await`.
+          return async (...args: unknown[]) => {
             const store = container.resolveOptional(CACHE_STORE, DEFAULT_CACHE)
             const key = cacheKey(opts, args)
-            const hit = store.get(key)
+            const hit = await store.get(key)
             if (hit !== undefined) return hit
-            const result = fn.apply(target, args)
-            if (result instanceof Promise) {
-              return result.then((v) => {
-                store.set(key, v, opts.ttl)
-                return v
-              })
-            }
-            store.set(key, result, opts.ttl)
+            const result = await fn.apply(target, args)
+            await store.set(key, result, opts.ttl)
             return result
           }
         }
         if (typeof prop === 'string' && evicts?.has(prop)) {
-          return (...args: unknown[]) => {
-            container.resolveOptional(CACHE_STORE, DEFAULT_CACHE).clear()
+          return async (...args: unknown[]) => {
+            await container.resolveOptional(CACHE_STORE, DEFAULT_CACHE).clear()
             return fn.apply(target, args)
           }
         }
