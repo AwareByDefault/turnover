@@ -216,6 +216,14 @@ export {
   type SecurityHeadersOptions,
   securityHeaders,
 } from './security-headers'
+export {
+  memorySessionStore,
+  Session,
+  type SessionData,
+  type SessionOptions,
+  type SessionStore,
+  session,
+} from './session'
 export { type StaticOptions, serveStatic } from './static'
 export {
   TRANSACTION_MANAGER,
