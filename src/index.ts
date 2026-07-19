@@ -165,6 +165,16 @@ export {
   macro,
 } from './macro'
 export {
+  type Address,
+  type Mail,
+  Mailer,
+  type MailerOptions,
+  type MailTransport,
+  type MemoryTransport,
+  memoryTransport,
+  type OutgoingMail,
+} from './mailer'
+export {
   type Ctor,
   ctxMeta as decoratorMeta,
   type HttpMethod,
