@@ -216,6 +216,7 @@ export {
   type SecurityHeadersOptions,
   securityHeaders,
 } from './security-headers'
+export { type StaticOptions, serveStatic } from './static'
 export {
   TRANSACTION_MANAGER,
   type TransactionManager,
