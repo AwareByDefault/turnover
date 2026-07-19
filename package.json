@@ -61,6 +61,11 @@
       "import": "./dist/bundler.js",
       "default": "./dist/bundler.js"
     },
+    "./codegen": {
+      "types": "./dist/codegen.d.ts",
+      "import": "./dist/codegen.js",
+      "default": "./dist/codegen.js"
+    },
     "./redis": {
       "types": "./dist/redis.d.ts",
       "import": "./dist/redis.js",
