@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Generated stress-test fixture (see test/scan-stress/generate.ts)
+test/.scan-fixture/
+
 # IDE
 .vscode/
 .idea/

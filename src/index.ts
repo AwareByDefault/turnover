@@ -1,9 +1,168 @@
-import { createApp } from "./framework";
+// Public API of the framework.
 
-// Controllers are auto-discovered: createApp() scans the source tree for
-// `@controller` classes, so no imports of individual controllers are needed here.
-const app = await createApp();
-const server = app.listen(3000);
-
-console.log(`🚀 Server running at ${server.url}`);
-console.log("📍 Routes:", app.routeTable());
+export {
+  type AfterAdvice,
+  type AroundAdvice,
+  addAround,
+  after,
+  around,
+  aspectProcessor,
+  type BeforeAdvice,
+  before,
+  type JoinPoint,
+  type ProceedingJoinPoint,
+} from './aop'
+export {
+  type AfterResponseHook,
+  App,
+  type BodyParser,
+  type CreateAppOptions,
+  createApp,
+  type FetchHandler,
+  type Plugin,
+  type RequestHook,
+  type ResponseHook,
+  type ResponseSerializer,
+  type StartHook,
+  type StopHook,
+  type TraceEvent,
+  type TraceHook,
+} from './app'
+export { Auth, type Principal, requireAuth } from './auth'
+export {
+  CACHE_STORE,
+  type CacheableOptions,
+  type CacheStore,
+  cacheable,
+  cacheEvict,
+  MemoryCache,
+} from './cache'
+export {
+  type Client,
+  type ClientConfig,
+  type ClientResult,
+  createClient,
+} from './client'
+export {
+  ACTIVE_PROFILES,
+  CONFIG_SOURCE,
+  Config,
+  type ConfigSource,
+  EnvConfigSource,
+  profile,
+  requireValue,
+  value,
+} from './config'
+export { type CookieOptions, Cookies } from './cookies'
+export { type CorsOptions, cors } from './cors'
+export {
+  Container,
+  InjectionToken,
+  inject,
+  injectAll,
+  injectable,
+  injectOptional,
+  type PostProcessor,
+  type Provider,
+  type ProviderDef,
+  postConstruct,
+  preDestroy,
+  repository,
+  type Scope,
+  service,
+  type Token,
+} from './di'
+export {
+  BadRequestError,
+  ConflictError,
+  type ErrorBody,
+  ForbiddenError,
+  GoneError,
+  HttpError,
+  type HttpErrorOptions,
+  InternalServerError,
+  NotFoundError,
+  PaymentRequiredError,
+  TooManyRequestsError,
+  toErrorResponse,
+  UnauthorizedError,
+  UnprocessableEntityError,
+} from './error'
+export {
+  type EventListener,
+  Events,
+  type EventType,
+  onEvent,
+} from './events'
+export {
+  type Context,
+  catchError,
+  controller,
+  type Deriver,
+  del,
+  derive,
+  type ErrorHandler,
+  type Guard,
+  get,
+  type Interceptor,
+  intercept,
+  patch,
+  post,
+  put,
+  type ResponseState,
+  type RouteOptions,
+  resolve,
+  use,
+  type ValidatedInputs,
+} from './http'
+export {
+  defineMacro,
+  type MacroFactory,
+  type MacroHooks,
+  macro,
+} from './macro'
+export {
+  type Ctor,
+  ctxMeta as decoratorMeta,
+  type HttpMethod,
+  type MetaBag,
+  metadataOf as classMeta,
+} from './metadata'
+export { type ModuleOptions, module } from './module'
+export type {
+  OpenApiDocument,
+  OpenApiInfo,
+  OpenApiOptions,
+  OpenApiServer,
+  OperationMeta,
+} from './openapi'
+export {
+  getRequestState,
+  getRequestStore,
+  type RequestState,
+  type RequestStore,
+  setPrincipal,
+} from './request'
+export {
+  type ScheduledOptions,
+  Scheduler,
+  scheduled,
+  schedulingProcessor,
+} from './scheduling'
+export {
+  type InferInput,
+  type InferOutput,
+  issuePath,
+  type RouteSchemas,
+  type StandardFailure,
+  type StandardIssue,
+  type StandardResult,
+  type StandardSchemaV1,
+  type StandardSuccess,
+  validate,
+} from './schema'
+export {
+  TRANSACTION_MANAGER,
+  type TransactionManager,
+  transactional,
+} from './transaction'

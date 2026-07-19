@@ -1,8 +1,9 @@
 name: CI
 
 # Backstop gate on every PR (and pushes to main): require a changeset so release
-# impact is always declared, then typecheck the tree and verify the published
-# build compiles. Matches what the release workflow runs before publishing.
+# impact is always declared, lint + typecheck the tree, verify the published
+# build compiles, run the unit tests, and audit dependencies. These are the
+# checks the "Protect main" ruleset requires before a PR can merge.
 on:
   pull_request:
   push:
@@ -40,8 +41,10 @@ jobs:
           echo "Changeset(s) in this PR:"
           echo "$changed"
 
-  build:
-    name: Typecheck & build
+  # `lint` (not `lint:fix`) is the verification form — CI must fail on
+  # unformatted/unlinted code rather than silently fixing it.
+  lint:
+    name: Lint & typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -49,5 +52,41 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - run: bun run lint
       - run: bun run typecheck
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
       - run: bun run build
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+  # Dependency vulnerability gate. Blocks on high/critical advisories only
+  # (`--audit-level=high`) so a moderate/low advisory in a transitive dep can't
+  # wedge unrelated PRs; Dependabot (.github/dependabot.yml) handles routine bumps.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun audit --audit-level=high

@@ -41,29 +41,63 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js",
+      "default": "./dist/auth.js"
+    },
+    "./request": {
+      "types": "./dist/request.d.ts",
+      "import": "./dist/request.js",
+      "default": "./dist/request.js"
+    },
+    "./otel": {
+      "types": "./dist/otel.d.ts",
+      "import": "./dist/otel.js",
+      "default": "./dist/otel.js"
+    },
+    "./bundler": {
+      "types": "./dist/bundler.d.ts",
+      "import": "./dist/bundler.js",
+      "default": "./dist/bundler.js"
+    },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist",
-    "src/framework"
-  ],
-  "sideEffects": [
-    "./dist/metadata.js"
-  ],
+  "files": ["dist", "src"],
+  "sideEffects": ["./dist/metadata.js"],
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
+    "dev": "bun run --watch example/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check . && bun tools/lint/index.ts",
+    "lint:fix": "biome check --write . && bun tools/lint/index.ts --fix",
+    "lint:checks": "bun tools/lint/index.ts",
     "prepublishOnly": "bun run clean && bun run build",
     "changeset": "changeset",
     "changeset:status": "changeset status",
     "changeset:version": "changeset version",
     "changeset:publish": "changeset publish",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:scan-stress": "bun run test/scan-stress/run.ts --lines 1000000 --cleanup",
+    "bench": "bun run bench/index.ts"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
     "@changesets/cli": "^2.27.11",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/context-async-hooks": "^2.9.0",
+    "@opentelemetry/core": "^2.9.0",
+    "@opentelemetry/sdk-trace-base": "^2.9.0",
     "bun-types": "latest",
     "typescript": "^7.0.2"
   }

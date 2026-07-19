@@ -1,7 +1,7 @@
 {
   // Build config for publishing the framework. Extends the base tsconfig but
-  // emits JS + type declarations for the framework's public surface only —
-  // the demo in `src/app` and `src/index.ts` are intentionally excluded.
+  // emits JS + type declarations for the framework only. The demo lives in
+  // `example/` (outside `src`), so it is never compiled or published.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
@@ -9,7 +9,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src/framework"
+    "rootDir": "src"
   },
-  "include": ["src/framework"]
+  "include": ["src"]
 }
