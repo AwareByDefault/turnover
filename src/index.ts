@@ -142,6 +142,15 @@ export {
   type ValidatedInputs,
 } from './http'
 export {
+  type EnqueueOptions,
+  type Job,
+  type JobHandler,
+  JobQueue,
+  type JobQueueOptions,
+  type JobStatus,
+  type JobStore,
+} from './jobs'
+export {
   LOG_LEVEL,
   LOG_SINK,
   Logger,
