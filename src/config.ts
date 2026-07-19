@@ -1,15 +1,29 @@
 import { InjectionToken, inject, injectable, injectOptional } from './di'
 import { type Ctor, ctxMeta, PROFILE } from './metadata'
+import { issuePath, type StandardIssue, type StandardSchemaV1 } from './schema'
 
 /** A source of configuration values keyed by string (env vars, a file, an object). */
 export interface ConfigSource {
   get(key: string): string | undefined
+  /**
+   * All key/value pairs — for consumers that enumerate the whole source, such
+   * as {@link configProperties}. Optional; a source that can't enumerate simply
+   * won't support `@configProperties` binding.
+   */
+  entries?(): Iterable<readonly [string, string]>
 }
 
 /** The default source: `Bun.env` / `process.env`. */
 export class EnvConfigSource implements ConfigSource {
   get(key: string): string | undefined {
     return (Bun.env as Record<string, string | undefined>)[key]
+  }
+
+  entries(): Iterable<readonly [string, string]> {
+    const env = Bun.env as Record<string, string | undefined>
+    return Object.entries(env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    )
   }
 }
 
@@ -114,5 +128,111 @@ export function requireValue(key: string): string {
 export function profile(...names: string[]) {
   return (_value: Ctor, context: ClassDecoratorContext): void => {
     ctxMeta(context)[PROFILE] = names
+  }
+}
+
+/** Options for {@link configProperties}. */
+export interface ConfigPropertiesOptions {
+  /**
+   * Only bind variables whose name starts with this prefix; the prefix is
+   * stripped before mapping to a field (e.g. `prefix: "APP_"` binds `APP_PORT`
+   * to `port`).
+   */
+  prefix?: string
+}
+
+/** Thrown when configuration fails its schema at construction (fail-fast). */
+export class ConfigValidationError extends Error {
+  /** The Standard Schema issues that caused the failure. */
+  readonly issues: ReadonlyArray<StandardIssue>
+
+  constructor(configClass: string, issues: ReadonlyArray<StandardIssue>) {
+    const detail = issues
+      .map((issue) => {
+        const path = issuePath(issue)?.join('.') ?? ''
+        return `  - ${path ? `${path}: ` : ''}${issue.message}`
+      })
+      .join('\n')
+    super(`Invalid configuration for ${configClass}:\n${detail}`)
+    this.name = 'ConfigValidationError'
+    this.issues = issues
+  }
+}
+
+/** `DATABASE_URL` → `databaseUrl`, `PORT` → `port`. */
+function toCamelCase(key: string): string {
+  return key
+    .toLowerCase()
+    .replace(/_+([a-z0-9])/g, (_match, char: string) => char.toUpperCase())
+}
+
+/** Read every entry from the source, strip the prefix, and camelCase the keys. */
+function collectConfig(
+  source: ConfigSource,
+  prefix: string,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, val] of source.entries?.() ?? []) {
+    if (prefix && !key.startsWith(prefix)) continue
+    out[toCamelCase(prefix ? key.slice(prefix.length) : key)] = val
+  }
+  return out
+}
+
+function isThenable(value: unknown): value is Promise<unknown> {
+  return (
+    value != null && typeof (value as { then?: unknown }).then === 'function'
+  )
+}
+
+/**
+ * Class decorator: bind configuration to a class's fields by naming convention
+ * and validate it through a Standard Schema when the class is constructed
+ * (fail-fast). Each field's `SCREAMING_SNAKE_CASE` environment variable maps to
+ * its `camelCase` name — `DATABASE_URL` → `databaseUrl` — then the whole object
+ * is validated (and coerced) by `schema`. The validated result is assigned onto
+ * the instance, which is an injectable singleton.
+ *
+ * ```ts
+ * @configProperties(EnvSchema)      // EnvSchema: any Standard Schema (Zod, …)
+ * class Settings {
+ *   port!: number                   // ← PORT
+ *   databaseUrl!: string            // ← DATABASE_URL
+ * }
+ * // inject(Settings).port  → validated number; boot fails on a bad value
+ * ```
+ *
+ * Reads from `Bun.env` by default; a `CONFIG_SOURCE` provider (or
+ * `createApp({ config })`) overrides it, as long as the source can `entries()`.
+ * The schema must validate synchronously.
+ */
+export function configProperties(
+  schema: StandardSchemaV1,
+  options: ConfigPropertiesOptions = {},
+) {
+  return <T extends new () => object>(
+    target: T,
+    _context: ClassDecoratorContext,
+  ): T => {
+    const bound = class extends (target as new () => object) {
+      constructor() {
+        super()
+        const source = injectOptional(CONFIG_SOURCE, ENV_SOURCE)
+        const raw = collectConfig(source, options.prefix ?? '')
+        const result = schema['~standard'].validate(raw)
+        if (isThenable(result)) {
+          throw new Error(
+            `@configProperties on ${target.name} needs a synchronous schema, ` +
+              'but the validator returned a promise.',
+          )
+        }
+        if (result.issues) {
+          throw new ConfigValidationError(target.name, result.issues)
+        }
+        Object.assign(this, result.value as object)
+      }
+    }
+    Object.defineProperty(bound, 'name', { value: target.name })
+    return bound as unknown as T
   }
 }

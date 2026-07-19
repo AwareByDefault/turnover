@@ -1029,7 +1029,10 @@ function toConfigSource(
     return config as ConfigSource
   }
   const record = config as Record<string, string>
-  return { get: (key) => record[key] }
+  return {
+    get: (key) => record[key],
+    entries: () => Object.entries(record),
+  }
 }
 
 /** Active profiles from the environment (`TURNOVER_PROFILES`, else `NODE_ENV`). */
