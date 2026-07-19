@@ -23,36 +23,39 @@ export type JobHandler<T = unknown> = (
   job: Job<T>,
 ) => void | Promise<void>
 
-/** Pluggable job storage. The default is in-memory; back it with a database for durability. */
+/**
+ * Pluggable job storage. Async so a durable backend (Redis, a database) can back
+ * it; the default is in-memory.
+ */
 export interface JobStore {
-  add(job: Job): void
+  add(job: Job): Promise<void>
   /** Pending jobs eligible at `now`, soonest first. */
-  due(now: number): Job[]
-  save(job: Job): void
+  due(now: number): Promise<Job[]>
+  save(job: Job): Promise<void>
   /** Dead-lettered jobs (attempts exhausted). */
-  failed(): Job[]
+  failed(): Promise<Job[]>
   /** Count of jobs still pending. */
-  pending(): number
+  pending(): Promise<number>
 }
 
 function memoryJobStore(): JobStore {
   const jobs = new Map<string, Job>()
   return {
-    add(job) {
+    async add(job) {
       jobs.set(job.id, job)
     },
-    save(job) {
+    async save(job) {
       jobs.set(job.id, job)
     },
-    due(now) {
+    async due(now) {
       return [...jobs.values()]
         .filter((job) => job.status === 'pending' && job.runAt <= now)
         .sort((a, b) => a.runAt - b.runAt)
     },
-    failed() {
+    async failed() {
       return [...jobs.values()].filter((job) => job.status === 'failed')
     },
-    pending() {
+    async pending() {
       let count = 0
       for (const job of jobs.values()) if (job.status === 'pending') count += 1
       return count
@@ -118,7 +121,11 @@ export class JobQueue {
   }
 
   /** Enqueue a job and return its id. */
-  enqueue<T>(type: string, payload: T, options: EnqueueOptions = {}): string {
+  async enqueue<T>(
+    type: string,
+    payload: T,
+    options: EnqueueOptions = {},
+  ): Promise<string> {
     this.seq += 1
     const id = `${type}-${this.seq}-${Math.floor(this.now())}`
     const job: Job<T> = {
@@ -130,7 +137,7 @@ export class JobQueue {
       runAt: this.now() + (options.delay ?? 0),
       status: 'pending',
     }
-    this.store.add(job as Job)
+    await this.store.add(job as Job)
     return id
   }
 
@@ -140,7 +147,7 @@ export class JobQueue {
    * reschedules with backoff, or dead-letters once attempts are spent.
    */
   async process(now: number = this.now()): Promise<number> {
-    const due = this.store.due(now)
+    const due = await this.store.due(now)
     for (const job of due) {
       job.attempts += 1
       try {
@@ -158,7 +165,7 @@ export class JobQueue {
           job.runAt = now + Math.max(0, this.backoff(job.attempts + 1))
         }
       }
-      this.store.save(job)
+      await this.store.save(job)
     }
     return due.length
   }
@@ -180,12 +187,12 @@ export class JobQueue {
   }
 
   /** Jobs that exhausted their attempts (the dead-letter list). */
-  failed(): Job[] {
+  failed(): Promise<Job[]> {
     return this.store.failed()
   }
 
   /** Number of jobs still pending. */
-  pending(): number {
+  pending(): Promise<number> {
     return this.store.pending()
   }
 }
