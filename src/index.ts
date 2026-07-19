@@ -47,6 +47,7 @@ export {
   type BearerOptions,
   bearer,
 } from './authentication'
+export { bodyLimit } from './body-limit'
 export {
   CACHE_STORE,
   type CacheableOptions,
