@@ -204,6 +204,10 @@ export {
   validate,
 } from './schema'
 export {
+  type SecurityHeadersOptions,
+  securityHeaders,
+} from './security-headers'
+export {
   TRANSACTION_MANAGER,
   type TransactionManager,
   transactional,
