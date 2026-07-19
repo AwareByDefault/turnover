@@ -1,6 +1,6 @@
 {
   "name": "turnover",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "Decorator-first REST framework for Bun — inject your dependencies, mount controllers, and let them rest.",
   "type": "module",
   "license": "MIT",
