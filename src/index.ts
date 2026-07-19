@@ -119,7 +119,12 @@ export {
   type EventType,
   onEvent,
 } from './events'
-export { type HealthCheck, type HealthOptions, health } from './health'
+export {
+  HEALTH_CHECK,
+  type HealthCheck,
+  type HealthOptions,
+  health,
+} from './health'
 export {
   type Context,
   catchError,
