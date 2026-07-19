@@ -218,6 +218,13 @@ export {
   PasswordHasher,
   type PasswordOptions,
 } from './password'
+export {
+  memoryOtpStore,
+  type OtpRecord,
+  type OtpStore,
+  Passwordless,
+  type PasswordlessOptions,
+} from './passwordless'
 export { type ProblemDocument, problemDetails } from './problem-details'
 export {
   memoryRateLimitStore,
