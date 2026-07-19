@@ -1,5 +1,216 @@
 # turnover
 
+## 0.2.0
+
+### Minor Changes
+
+- 3d767aa: Expose the decorator-metadata helpers so consumers can build their own AOP decorators and plugins with the same primitives the built-ins use.
+
+  - **`decoratorMeta(context)`** — the shared metadata bag for the class being decorated (from a decorator's `context`).
+  - **`classMeta(target)`** — the metadata bag attached to a class at runtime (`Class[Symbol.metadata]`), for inspecting a class inside a container post-processor.
+  - **`MetaBag`** — the bag's type.
+
+  Together with the already-public `addAround`, `around`/`before`/`after`, `aspectProcessor`, `Container.addPostProcessor`, and the `Plugin`/`wrap` surface, these let a consumer rebuild something like the `turnover/otel` plugin (class-level `@traced` + `@noTrace` opt-out) entirely from the public API — no internal imports.
+
+- 3d767aa: Add `turnover/bundler` — make auto-discovery survive bundling.
+
+  Auto-discovery uses a runtime filesystem scan, which a bundler tree-shakes away, so a naively bundled `createApp()` app boots with zero routes. The new build-time helpers fix that:
+
+  - **`turnoverPlugin()`** — a `Bun.build` plugin that runs the same scan at build time and injects the discovered `@controller` files into the entrypoint (marking them side-effectful so they aren't tree-shaken). Your entry keeps calling `createApp()` with no arguments — no source changes:
+
+    ```ts
+    import { turnoverPlugin } from "turnover/bundler";
+    await Bun.build({
+      entrypoints: ["./src/server.ts"],
+      outdir: "dist",
+      target: "bun",
+      plugins: [turnoverPlugin()],
+    });
+    ```
+
+  - **`scanControllerFiles(dir)`** — the underlying scan (absolute paths of every `@controller` file), for generating your own manifest if you prefer explicit registration.
+
+  The core stays dependency-free (this is a separate subpath, importing only `bun`/`node` types). `test/bundle-smoke.test.ts` proves it end-to-end by building and cURLing a bundled server.
+
+- 3d767aa: Add configuration/environment injection and profiles.
+
+  - **`Config`** service + **`value(key, fallback)`** / **`requireValue(key)`** helpers read configuration, coercing to the fallback's type (`string`/`number`/`boolean`). Reads `Bun.env` by default; override with **`createApp({ config })`** (a plain object or a `ConfigSource`) or a `CONFIG_SOURCE` provider. `Config` also has `require`/`has`.
+  - **Profiles**: set active profiles via `createApp({ profiles })` (defaults from `TURNOVER_PROFILES` or `NODE_ENV`). **`@profile(...names)`** mounts a controller or module only when one of its profiles is active; `Config.hasProfile(name)` reads them.
+  - Adds **`Container.resolveOptional(token, fallback)`** / **`injectOptional(token, fallback)`** (return a fallback when an `InjectionToken` is unbound), used by `Config`.
+  - Exposes `Config`, `ConfigSource`, `EnvConfigSource`, `CONFIG_SOURCE`, `ACTIVE_PROFILES`, `value`, `requireValue`, `profile`, and `injectOptional`.
+
+- 3d767aa: Add an `onResponse` hook, a plugin mechanism, and a built-in CORS plugin.
+
+  - **`onResponse(res, req)`** runs after every response (including 404s and errors) and may return a `Response` to replace it or mutate its headers. Register via `createApp({ onResponse })` or `app.onResponse()`. Full per-request order is now **onRequest → derivers → guards → interceptors → validation → handler → onResponse → response**.
+  - **Plugins** — a `Plugin` is a bundle of hooks (`onRequest`/`onResponse`/`onStart`/`onStop`/`onError`). Register with `app.register(plugin)` or `createApp({ plugins: [...] })`.
+  - **`cors(options)`** — a built-in plugin that answers preflight `OPTIONS` requests and adds CORS headers to responses. `origin` accepts `true` (reflect, default), a string (`"*"` or fixed), an array/predicate (reflect on match), or `false`; plus `methods`, `allowedHeaders`, `exposedHeaders`, `credentials`, and `maxAge`.
+  - Exposes `ResponseHook`, `Plugin`, `App.onResponse`, `App.register`, `cors`, and `CorsOptions`.
+
+- 3d767aa: Add DI provider strategies — bind tokens to values, classes, factories, and aliases.
+
+  - **`InjectionToken<T>`** for non-class dependencies (interfaces, config values, multi-impl services).
+  - **`Container.register(token, provider)`** with `useValue` / `useClass` / `useFactory` (receives the container) / `useExisting` (alias). `useClass`/`useFactory` take an optional `scope`.
+  - **`createApp({ providers: [{ provide, useValue | useClass | useFactory | useExisting }] })`** registers providers before controllers mount. Register imperatively via `app.container.register(...)`.
+  - **Overriding**: the last registration for a token wins for `resolve()`/`inject()` (handy for test mocks). **Multi-injection**: `Container.resolveAll(token)` / `injectAll(token)` return every binding.
+  - Concrete `@injectable` classes still auto-construct without registration (unchanged). Exposes `InjectionToken`, `Token`, `Provider`, `ProviderDef`, and `injectAll`.
+
+- 3d767aa: Add HTTP error types and a customizable error-handling pipeline.
+
+  - **`HttpError`** and named subclasses (`BadRequestError`, `UnauthorizedError`, `PaymentRequiredError`, `ForbiddenError`, `NotFoundError`, `ConflictError`, `GoneError`, `UnprocessableEntityError`, `TooManyRequestsError`, `InternalServerError`). Throw one from a handler or guard and it renders as a JSON envelope (`{ error: { message, code?, details? } }`) with the right status. Extend `HttpError` for domain errors.
+  - **Error handlers** map thrown values to responses. An `ErrorHandler` returns a `Response` to handle the error or nothing to defer to the next in the chain — **route → controller → global → framework default**. Register scoped handlers with the `@catchError(...)` decorator (class or method) and global handlers via `createApp({ onError })` or `app.onError(...)`.
+  - **Safe defaults**: a thrown value that isn't an `HttpError` becomes an opaque `500` (its message is never leaked to the client) and is logged; a thrown `Response` still passes through unchanged. `handle()` now always resolves to a `Response` — handler/guard errors no longer reject it.
+  - Unmatched routes (`404`) and unsupported methods (`405`, with an `Allow` header) now return the same JSON error envelope.
+
+- 3d767aa: Add an in-process event bus for decoupling.
+
+  - **`Events`** (injectable) — `publish(event)` dispatches an event object to every subscriber of its class and awaits them all; `on(type, listener)` subscribes and returns an unsubscribe function. A failing listener is logged, not propagated.
+  - **`@onEvent(EventType)`** subscribes a service method; it registers when the service is constructed. List listener services in **`createApp({ listeners })`** to construct them eagerly (when nothing else injects them).
+  - Exposes `Events`, `onEvent`, `EventType`, and `EventListener`.
+
+- 3d767aa: Expose `turnover/auth` and `turnover/request` as package subpaths so consumers can augment the framework's `Principal` and `RequestStore` interfaces the way a published package requires (`declare module "turnover/auth"`).
+
+  The framework source now lives directly under `src/` (was `src/framework/`), and the runnable demo moved to a top-level `example/` folder that is **not** part of the published package.
+
+- 3d767aa: Add `@postConstruct` / `@preDestroy` bean lifecycle callbacks.
+
+  - **`@postConstruct`** (method decorator) runs right after the container constructs a service (once field initializers have run). Sync hooks run inline; **async hooks are awaited at bootstrap** via `container.init()`, which `createApp` now calls after mounting — so a service that opens a pool/connection is ready before you serve.
+  - **`@preDestroy`** (method decorator) runs when the app stops: `app.stop()` now calls `container.dispose()`, invoking `@preDestroy` hooks in **reverse construction order**. A failing hook is logged and doesn't stop the others.
+  - Exposes `postConstruct`, `preDestroy`, and the `Container.init()` / `Container.dispose()` methods.
+
+- 3d767aa: Add around-advice interceptors and app lifecycle hooks.
+
+  - **`@intercept(...)`** (controller or route) wraps a handler with around advice: an `Interceptor` receives `ctx` and a `next()` that runs the rest of the chain and returns its `Response`. Run code before/after, transform the response, short-circuit by skipping `next()`, or catch errors from it. Interceptors nest — controller-level wraps method-level, and a module's `intercept` wraps both. They run after guards, around validation and the handler. `@module` gains an `intercept` option.
+  - **Lifecycle hooks** — `onRequest(req)` runs before routing on every request (return a `Response` to short-circuit, e.g. CORS); `onStart(server)` runs once after `listen()`; `onStop()` runs on `app.stop()`, which then closes the server. Register via `createApp({ onRequest, onStart, onStop })` or `app.onRequest()` / `app.onStart()` / `app.onStop()`.
+  - Full per-request order: **onRequest → derivers → guards → interceptors → validation → handler → response**.
+  - Exposes `intercept`, `Interceptor`, `RequestHook`, `StartHook`, `StopHook`, and `App.stop()`.
+
+- 3d767aa: Add `@resolve`, `onAfterResponse`, and `onTrace` lifecycle phases.
+
+  - **`@resolve(...)`** (controller or route) is like `@derive` but runs **after validation**, so it can read `ctx.valid` — e.g. load the entity named by a now-validated `:id` and put it on `ctx.store`. Order is now derivers → guards → validation → **resolvers** → handler.
+  - **`onAfterResponse(res, req)`** runs **fire-and-forget** after each response (including 404s/errors) so telemetry never delays the response.
+  - **`onTrace(event)`** reports each request's `{ req, response, durationMs }`.
+  - All three register via `createApp({ onAfterResponse, onTrace })` / `app.onAfterResponse()` / `app.onTrace()`, and `onAfterResponse`/`onTrace` via a `Plugin`. Exposes `resolve`, `AfterResponseHook`, `TraceHook`, and `TraceEvent`.
+
+- 3d767aa: Add macros — named, parameterized, DI-resolvable cross-cutting bundles.
+
+  - **`defineMacro(name, factory)`** registers a macro whose factory returns a bundle of hooks (`use` / `derive` / `intercept` / `catchError`). **`@macro(name, ...args)`** (controller or route) applies it, expanding into the same pipeline as the individual decorators.
+  - The factory runs **in an injection context at mount time**, so it can `inject()` services and close over them — the DI + cross-cutting "fusion". Class- and method-level macros both apply, and multiple compose.
+  - Unknown macro names throw at mount. Adds `Container.runInContext(fn)` (run a function with the container active so `inject()` works). Exposes `defineMacro`, `macro`, `MacroHooks`, and `MacroFactory`.
+
+- 3d767aa: Add general method-level AOP — `@before` / `@after` / `@around` advice on any injectable method.
+
+  - Advise _any_ container-managed service method (not just HTTP handlers) with cross-cutting logic — logging, caching, retry, timing, transactions. `@around` receives a `ProceedingJoinPoint` and calls `proceed()` (optionally with modified args); it can transform the result, short-circuit, or catch errors. `@before` runs first; `@after` runs last (awaiting async methods).
+  - Multiple `@around` advice nest — the top-most decorator is outermost.
+  - Implemented via a `Proxy` post-processor (`aspectProcessor`) that `createApp` auto-registers; advice applies to calls through the injected instance, and **self-invocation bypasses advice** (a call to another method on `this` is not advised). `#private` fields work through the proxy.
+  - Exposes `before`, `after`, `around`, `aspectProcessor`, and the `JoinPoint` / `ProceedingJoinPoint` / advice types.
+
+- 3d767aa: Add `@module` for composing controllers into prefixed, nestable units.
+
+  - **`@module({ prefix, controllers, modules, use, derive, catchError })`** groups controllers under a shared path prefix and shares its cross-cutting concerns — guards (`use`), derivers (`derive`), and error handlers (`catchError`) — with every controller it mounts and with any nested `modules`.
+  - Mount modules via **`createApp({ modules: [...] })`**; they can be combined with explicit `controllers`. Prefixes compose across nesting (`/admin` → `/admin/billing` → controller base → route).
+  - Import cycles are broken automatically (recursion-stack guard), while a shared module can still be mounted under several parents (a diamond).
+  - Exposes `module` and `ModuleOptions`.
+
+- 3d767aa: Add OpenAPI 3.1 document generation.
+
+  - **`app.openapi(options)`** builds an OpenAPI 3.1 document from the mounted routes: paths (with `:param` → `{param}`), methods, path/query parameters, request bodies, and responses.
+  - Declare per-route metadata (`summary`, `description`, `tags`, `operationId`, `deprecated`) via a new `openapi` field on the route decorator options (`@get("/:id", { params, response, openapi: { summary } })`). `RouteOptions` is exposed for the combined schema + openapi shape.
+  - Because Standard Schema doesn't mandate a JSON-Schema export, pass `options.toJsonSchema` to include schema bodies (TypeBox schemas already are JSON Schema; Zod via `zod-to-json-schema`). Without it, the document still lists every path, method, and parameter (path params default to `string`).
+  - `options` also takes `info` and `servers`. Serve the document however you like (e.g. via an `onRequest` hook). Exposes `OpenApiOptions`, `OpenApiDocument`, `OpenApiInfo`, `OpenApiServer`, and `OperationMeta`.
+
+- 3d767aa: Add OpenTelemetry tracing via the `turnover/otel` subpath — convention-first, one line to enable.
+
+  - **`otel()` plugin** — `createApp({ plugins: [otel()] })` enables app-wide HTTP server tracing with zero config: a `SERVER` span per request named by the matched route (`GET /users/:id`, low-cardinality), W3C `traceparent` continuation, HTTP semantic-convention attributes, and exception/5xx recording. The server span is the **active** context, so nested spans attach to it automatically. Customize with `ignore` / `enrich` / `captureRequestHeaders`.
+  - **`@traced()`** — trace child spans (built on the AOP seam). On a **method** it traces that method; on a **class** it traces every public method, with a per-method **`@noTrace`** opt-out. Configure the spans with `@traced({ name, kind, attributes, enrich })` — `enrich(span, joinPoint)` can add attributes from the call's arguments.
+  - **`addAround(meta, method, advice)`** — the programmatic form of `@around` (apply advice to many methods at once); what class-level `@traced()` is built on.
+  - The core stays **dependency-free**: `turnover/otel` is a separate entry, and `@opentelemetry/api` is an _optional_ peer dependency. With no OpenTelemetry SDK registered, every call is a no-op (zero overhead).
+
+  New framework primitives it's built on (also useful on their own):
+
+  - **`ctx.route`** — the matched route pattern (low-cardinality) on the handler `Context`, for telemetry span names, metric labels, and structured logging.
+  - **`createApp({ wrap })` / `app.wrap()` / `Plugin.wrap`** — wrap every request outermost (around guards, the handler, and error handling), seeing the final `Response`. The place to establish per-request ambient context.
+
+- 3d767aa: Add container post-processors — the instance-wrapping seam for method-level AOP.
+
+  - **`Container.addPostProcessor((instance, token) => instance | wrapper)`** (or **`createApp({ postProcessors })`**) inspects each freshly constructed class instance and returns it, or a wrapper such as a `Proxy`.
+  - Processors **chain** in registration order, and a returned wrapper is **cached** so later resolves get it. Registered before any construction.
+  - The raw instance is cached first, so re-entrant resolution during construction doesn't loop and self-invocation reaches the unwrapped object.
+  - This is the low-level seam that general method-level advice will be built on. Exposes `PostProcessor` and `Container.addPostProcessor`.
+
+- 3d767aa: Add `@derive` for request-scoped context.
+
+  - **`@derive(...derivers)`** (controller or route) runs before guards to compute per-request values. A deriver returns an object to merge into `ctx.store`, writes `ctx.store` directly, or throws (e.g. an `HttpError`) to abort.
+  - **`ctx.store`** holds those values; augment the `RequestStore` interface to type it. Injected singletons can read the same store via **`getRequestStore()`** without a `ctx`.
+  - Per-request ordering is now **derivers → guards → validation → handler**; class-level derivers run before method-level ones. The store is isolated per request via `AsyncLocalStorage`.
+  - Exposes `derive`, `Deriver`, `RequestStore`, and `getRequestStore`.
+
+- 3d767aa: Add a `"request"` DI scope.
+
+  - **`@injectable({ scope: "request" })`** gives one instance per request, shared across every injection within that request and rebuilt for the next. It's injected as a proxy that resolves the current request's instance, so it works even when injected into a singleton. Backed by the `AsyncLocalStorage` request state.
+  - App-level lifecycle tracking (awaiting async `@postConstruct` at bootstrap, running `@preDestroy` on shutdown) now applies **only to singletons** — transient/request beans are short-lived, so tracking them would leak. `@postConstruct` still runs on each transient/request instance.
+
+- 3d767aa: Add response control and cookies to the request context.
+
+  - **`ctx.set`** — set the status of a coerced return value (`ctx.set.status`) and merge headers onto the response (`ctx.set.headers`, a `Headers`). A returned `Response` keeps its own status; `set.headers` still merge onto it, preserving its existing headers.
+  - **`ctx.cookies`** — read incoming cookies (`get` / `has` / `all`) and queue outgoing ones (`set(name, value, options)` / `delete(name, options?)`) with the usual attributes (`path`, `domain`, `expires`, `maxAge`, `httpOnly`, `secure`, `sameSite`, `partitioned`). Values are URL-encoded/decoded.
+  - `set.headers` and cookies are applied to **every** response — coerced values, returned `Response`s, guard short-circuits, and error responses alike.
+  - Exposes `Cookies`, `CookieOptions`, and `ResponseState`.
+
+- 3d767aa: Add scheduled tasks (`@scheduled`) and stereotype aliases (`@service` / `@repository`).
+
+  - **`@scheduled({ interval, runOnStart? })`** runs a service method on a fixed interval while the app is listening — started by `app.listen()`, cleared by `app.stop()`. `runOnStart` also runs it once at startup; a failing run is logged, not propagated. The service must be constructed (inject it, or list it in `createApp({ listeners })`). For cron expressions, layer an external cron library over the same methods. Exposes `scheduled`, `Scheduler`, `ScheduledOptions`, and `schedulingProcessor`.
+  - **`@service()`** and **`@repository()`** are stereotype aliases of `@injectable()` (service-layer and persistence components).
+
+- 3d767aa: Add Standard Schema validation for route inputs and responses.
+
+  - Declare schemas on a route decorator's options — `@post("/", { body, query, params, response })` — using any [Standard Schema](https://standardschema.dev)-compatible validator (Zod, Valibot, ArkType, TypeBox with its adapter, …). turnover takes **no dependency** on a validator; it only speaks the interface.
+  - Validated (and coerced) inputs are exposed on `ctx.valid.body` / `ctx.valid.query` / `ctx.valid.params`. `ctx.body()` still returns the raw body. Cast `ctx.valid.*` to the schema's output type (or use `InferOutput<typeof Schema>`) — standard decorators can't flow the type onto the handler signature.
+  - A failed input validation throws a `422` with `{ error: { code: "validation_failed", details: { location, issues } } }`. A failed `response` validation is a server bug — logged and returned as an opaque `500`.
+  - Validation runs after guards. Exposes `StandardSchemaV1`, `RouteSchemas`, `InferInput`/`InferOutput`, `validate`, `issuePath`, and the Standard Schema result/issue types.
+
+- 3d767aa: Add pluggable body parsers and response serializers.
+
+  - **`BodyParser`** — parse a request body by content type (exact, subtype wildcard, or catch-all). `ctx.body()` picks the first matching parser, falling back to the built-in JSON/text default.
+  - **`ResponseSerializer`** — turn a non-`Response` return value into a `Response`, or return `undefined` to defer. Serializers get first crack before the JSON default, can content-negotiate via `ctx` (the `Accept` header), wrap values (envelopes), or stream (`ReadableStream`).
+  - Register via `createApp({ parsers, serializers })`, `app.addParser()` / `app.addSerializer()`, or a `Plugin` (`parsers` / `serializers`). Exposes `BodyParser` and `ResponseSerializer`.
+
+- 3d767aa: Add `App.handle(request)` for socket-free request handling, and make it the single routing path.
+
+  - **New `app.handle(request)`** runs a `Request` through the full pipeline — routing, path-param capture, guards, DI, and response coercion — and returns a `Response` without opening a socket. Ideal for tests and offline tooling.
+  - **Unified routing.** `listen()` now serves through `handle()`, so an in-memory call behaves identically to a live request. `listen(port)` still returns Bun's `Server` (`.stop()`, `.port`, `.url`); pass `0` for an OS-assigned port. Unknown paths return `404`; unsupported methods return `405` with an `Allow` header.
+  - **`createApp({ controllers })` now mounts exactly the listed controllers** (isolated from anything else imported), instead of always mounting every `@controller` that has been registered globally.
+  - String handler return values now carry an explicit `text/plain;charset=utf-8` content-type, so `handle()` results match what `listen()` serves.
+  - Adds a `bun test` suite (`bun test`) covering routing, DI scopes, guards, request-scoped auth, and server lifecycle.
+
+- 3d767aa: Add `@transactional` and `@cacheable` / `@cacheEvict` — declarative transactions and caching on the method-AOP mechanism.
+
+  - **`@transactional`** runs a method inside the bound `TransactionManager` (commit on success, roll back on throw); the method's result becomes a `Promise`. Bind your database's manager via `{ provide: TRANSACTION_MANAGER, useValue }`; the default just runs the method.
+  - **`@cacheable(options?)`** memoizes a method's result by its arguments (async results cached once resolved). Options: `key`, `ttl` (ms), and `keyBy(...args)`. **`@cacheEvict`** clears the cache when the method is called. Uses an in-memory `MemoryCache` by default; bind `CACHE_STORE` to swap it (e.g. Redis).
+  - Both are container-bound post-processors `createApp` auto-registers; caching sits outside transactions (a cache hit skips the transaction). Exposes `transactional`, `TransactionManager`, `TRANSACTION_MANAGER`, `cacheable`, `cacheEvict`, `CacheStore`, `CACHE_STORE`, and `MemoryCache`.
+
+- 3d767aa: Add a minimal typed HTTP client (`createClient`).
+
+  - **`createClient<paths>(config)`** is a dependency-free typed client driven by an [`openapi-typescript`](https://github.com/openapi-ts/openapi-typescript)-generated `paths` type — the codegen-based end-to-end type safety, since standard decorators can't infer client types. Pipeline: dump `app.openapi()` → `openapi-typescript` → `createClient<paths>`.
+  - Typed `get`/`post`/`put`/`patch`/`delete`: path params, query, and body are typed and checked; the response `data` is typed per route; a non-2xx populates `error` instead. Options are required only when a route has path params or a body.
+  - `config.fetch` can override the fetch implementation — pass `app.handle` to drive an app in-memory. Exposes `createClient`, `Client`, `ClientConfig`, and `ClientResult`.
+
+- 3d767aa: WinterTC / runtime interop — `app.fetch` and `app.delegate()`.
+
+  The request pipeline is a standard WinterTC `(Request) => Promise<Response>` fetch handler. Two additions make Turnover deployable and composable across compliant runtimes:
+
+  - **`app.fetch`** — the bound fetch handler for the app, so `export default app` (or `export default { fetch: app.fetch }`) deploys on Cloudflare Workers, Deno Deploy, Vercel, etc. `app.listen()` remains the Bun server; `app.fetch` is the runtime-agnostic entry. Also exports the `FetchHandler` type.
+  - **`app.delegate(path, handler)`** — compose any other WinterTC-compliant handler (another Turnover app's `app.fetch`, or a raw function) at a path prefix. The prefix is stripped so the sub-app sees relative paths; the delegate owns its whole prefix; the longest matching prefix wins. Also available as `createApp({ delegate: { "/legacy": handler } })`.
+
+### Patch Changes
+
+- 3d767aa: Harden the toolchain — enforce the framework's own boundaries mechanically instead of by review.
+
+  - **`noRestrictedImports`** now bans `reflect-metadata` everywhere (standard TC39 decorators only) and `@opentelemetry/*` outside `src/otel.ts` (optional peers stay behind their subpath). The zero-dependency and standard-decorator guarantees are checked in CI, not just documented.
+  - **Stricter type-checking** — `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `noFallthroughCasesInSwitch`, and `noImplicitOverride` are on. Every indexed access in `src/` is now guarded (no non-null assertions), making the "possibly undefined" rule mechanical.
+  - **A `tools/lint/` check runner** — `bun run lint` now also runs a check Biome and `tsc` can't express: numbered-doc integrity (`§N.M` citations stay resolvable). It is unit-tested and bound to the rule it enforces.
+
+  No public API change.
+
 ## 0.1.0
 
 ### Minor Changes
