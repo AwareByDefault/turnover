@@ -8,7 +8,7 @@ import { getRequestState } from './request'
  * Intentionally empty — augment it in your app to describe your user:
  *
  * ```ts
- * declare module "<path-to>/framework/auth" {
+ * declare module "turnover/auth" {
  *   interface Principal { id: string; roles: string[] }
  * }
  * ```
@@ -25,24 +25,34 @@ export interface Principal {}
  */
 @injectable()
 export class Auth {
-  /** The principal, or throw `401` if the request isn't authenticated. */
+  /**
+   * The current request's principal, or throw a bare `401` `Response` (which
+   * passes through the pipeline unchanged) when unauthenticated. Use
+   * {@link Auth.optional} to branch instead of throw.
+   */
   get user(): Principal {
     const principal = getRequestState()?.principal
     if (!principal) throw new Response('Unauthorized', { status: 401 })
     return principal
   }
 
-  /** The principal, or `null` if unauthenticated. */
+  /** The current request's principal, or `null` if unauthenticated; never throws, unlike {@link Auth.user}. */
   get optional(): Principal | null {
     return getRequestState()?.principal ?? null
   }
 
+  /** Whether the current request carries a principal. */
   get isAuthenticated(): boolean {
     return getRequestState()?.principal != null
   }
 }
 
-/** Guard that rejects with `401` unless a principal has been set. */
+/**
+ * Guard rejecting with a bare `401` `Response` unless the request already
+ * carries a principal — one set earlier by an `authentication()` scheme or a
+ * guard calling `setPrincipal`. It only checks presence; use {@link requireRole}
+ * / {@link requireScope} / {@link authorize} for claim or policy checks.
+ */
 export const requireAuth: Guard = () => {
   if (!getRequestState()?.principal) {
     return new Response('Unauthorized', { status: 401 })
@@ -83,12 +93,20 @@ function claimGuard(field: 'roles' | 'scopes', allowed: string[]): Guard {
  * @controller('/admin') @requireRole('admin')
  * class Admin { @get('/') list() {} }
  * ```
+ *
+ * @param roles - claim values; the principal must hold at least one on `principal.roles`
+ * @returns a class/method guard decorator that enforces the role check
  */
 export function requireRole(...roles: string[]) {
   return use(claimGuard('roles', roles))
 }
 
-/** Like {@link requireRole}, but checks `principal.scopes`. */
+/**
+ * Like {@link requireRole}, but checks `principal.scopes`.
+ *
+ * @param scopes - claim values; the principal must hold at least one on `principal.scopes`
+ * @returns a class/method guard decorator that enforces the scope check
+ */
 export function requireScope(...scopes: string[]) {
   return use(claimGuard('scopes', scopes))
 }
@@ -102,6 +120,9 @@ export function requireScope(...scopes: string[]) {
  * @del('/:id') @authorize((user, ctx) => user.id === ctx.params.id)
  * remove() {}
  * ```
+ *
+ * @param policy - predicate over the current principal and request context; truthy allows the request
+ * @returns a class/method guard decorator that enforces the policy
  */
 export function authorize(
   policy: (principal: Principal, ctx: Context) => boolean | Promise<boolean>,

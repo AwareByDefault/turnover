@@ -4,6 +4,11 @@
 
 /** Anything with a WinterTC-style `handle` — an `App`, or a bare fetch handler wrapper. */
 export interface Handleable {
+  /**
+   * Handle one request and return its response.
+   * @param request - The incoming request to handle.
+   * @returns The response, synchronously or as a promise.
+   */
   handle(request: Request): Response | Promise<Response>
 }
 
@@ -11,7 +16,7 @@ export interface Handleable {
 export interface TestRequestOptions {
   /** Extra headers for this request (merged over the client defaults). */
   headers?: Record<string, string>
-  /** Query parameters appended to the path. */
+  /** Query parameters appended to the path; each value is coerced to a string via `String(value)`. */
   query?: Record<string, string | number | boolean>
 }
 
@@ -20,33 +25,83 @@ export interface TestRequestOptions {
  * a test can assert on the status, headers, and body together.
  */
 export interface TestResponse {
+  /** The HTTP status code. */
   readonly status: number
+  /** The response headers. */
   readonly headers: Headers
   /** The underlying `Response` (body unread). */
   readonly raw: Response
+  /**
+   * Read and parse the body as JSON (clones, so it can be called repeatedly).
+   * @typeParam T - the asserted shape of the parsed body; cast only, never validated at runtime.
+   * @returns The parsed body.
+   */
   json<T = unknown>(): Promise<T>
+  /**
+   * Read the body as text (clones, so it can be called repeatedly).
+   * @returns The body decoded as text.
+   */
   text(): Promise<string>
 }
 
 /** An ergonomic in-memory client over an app's `handle`. */
 export interface TestClient {
+  /**
+   * Send a request with an explicit method — the general form behind the verb helpers.
+   * @param method - HTTP method; a body is attached only when this is not exactly `"GET"` or `"HEAD"`.
+   * @param path - The request path, relative to the client's base URL.
+   * @param options - headers, query parameters, and an optional `body` (JSON-serialized unless already a raw body).
+   */
   request(
     method: string,
     path: string,
     options?: TestRequestOptions & { body?: unknown },
   ): Promise<TestResponse>
+  /**
+   * Send a `GET` request.
+   * @param path - The request path, relative to the client's base URL.
+   * @param options - Headers and query parameters for this request.
+   * @returns The response wrapper.
+   */
   get(path: string, options?: TestRequestOptions): Promise<TestResponse>
+  /**
+   * Send a `DELETE` request.
+   * @param path - The request path, relative to the client's base URL.
+   * @param options - Headers and query parameters for this request.
+   * @returns The response wrapper.
+   */
   delete(path: string, options?: TestRequestOptions): Promise<TestResponse>
+  /**
+   * Send a `POST` request with an optional body.
+   * @param path - The request path, relative to the client's base URL.
+   * @param body - The request body; JSON-serialized unless already a raw body.
+   * @param options - Headers and query parameters for this request.
+   * @returns The response wrapper.
+   */
   post(
     path: string,
     body?: unknown,
     options?: TestRequestOptions,
   ): Promise<TestResponse>
+  /**
+   * Send a `PUT` request with an optional body.
+   * @param path - The request path, relative to the client's base URL.
+   * @param body - The request body; JSON-serialized unless already a raw body.
+   * @param options - Headers and query parameters for this request.
+   * @returns The response wrapper.
+   */
   put(
     path: string,
     body?: unknown,
     options?: TestRequestOptions,
   ): Promise<TestResponse>
+  /**
+   * Send a `PATCH` request with an optional body.
+   * @param path - The request path, relative to the client's base URL.
+   * @param body - The request body; JSON-serialized unless already a raw body.
+   * @param options - Headers and query parameters for this request.
+   * @returns The response wrapper.
+   */
   patch(
     path: string,
     body?: unknown,
@@ -97,6 +152,10 @@ function isRawBody(body: unknown): body is BodyInit {
  * expect(res.status).toBe(201)
  * expect(await res.json()).toMatchObject({ name: 'Ada' })
  * ```
+ *
+ * @param app - The app (or anything {@link Handleable}) to route requests through.
+ * @param options - Base URL and default headers applied to every request.
+ * @returns A {@link TestClient} bound to the app.
  */
 export function testClient(
   app: Handleable,

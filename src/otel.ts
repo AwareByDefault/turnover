@@ -32,7 +32,7 @@ const headerGetter: TextMapGetter<Headers> = {
 export interface OtelOptions {
   /** Tracer name (default `"turnover"`) passed to `trace.getTracer`. */
   tracerName?: string
-  /** Tracer version passed to `trace.getTracer`. */
+  /** Tracer version passed to `trace.getTracer`; surfaces in the instrumentation scope of emitted spans. */
   tracerVersion?: string
   /** Return `true` to skip tracing a request (e.g. health checks). */
   ignore?: (ctx: HttpContext) => boolean
@@ -60,6 +60,9 @@ export interface OtelOptions {
  * Override or extend via options (`ignore`, `enrich`, …) and per-method
  * `@traced()`. Requires an OpenTelemetry SDK registered by the app; without one
  * every call is a no-op.
+ *
+ * @param options - Tracing overrides; every field defaults.
+ * @returns A plugin that adds per-request server-span tracing.
  */
 export function otel(options: OtelOptions = {}): Plugin {
   const tracer: Tracer = trace.getTracer(
@@ -229,6 +232,9 @@ function methodNames(cls: Ctor): string[] {
  * Configure the spans with `kind`, static `attributes`, or an `enrich` callback
  * (which can read the call's arguments). Needs `createApp` (which auto-registers
  * the aspect processor) and the class to be resolved through the container.
+ *
+ * @param options - Span configuration (name, kind, attributes, enrich, …).
+ * @returns A class/method decorator that traces the target as child spans.
  */
 export function traced(options: TracedOptions = {}) {
   const methodAdvice = traceAdvice(options)
@@ -264,6 +270,9 @@ export function traced(options: TracedOptions = {}) {
 /**
  * Method decorator: exclude a method from a class-level `@traced()` — the
  * "private" opt-out that keeps a method off an otherwise fully-traced class.
+ *
+ * @param _value - The decorated method (unused; metadata is keyed by name).
+ * @param decoratorContext - The standard method-decorator context; its `name` marks the method.
  */
 export function noTrace(
   _value: unknown,

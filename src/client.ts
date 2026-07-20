@@ -55,8 +55,11 @@ type NeedsOptions<Op> = Op extends { parameters: { path: unknown } }
 
 /** The result of a request: `data` on success, `error` on a non-2xx. */
 export interface ClientResult<T> {
+  /** Set only on a 2xx response: the JSON-parsed body, or the raw text if the response isn't `application/json`. Mutually exclusive with `error`. */
   data?: T
+  /** Set only on a non-2xx response: the JSON-parsed body, or raw text for non-JSON. The client resolves (never throws) on HTTP errors. */
   error?: unknown
+  /** The raw `Response`; its body has already been consumed to produce `data`/`error`. */
   response: Response
 }
 
@@ -69,21 +72,41 @@ type ClientMethod<Paths, M extends string> = <P extends PathsWith<Paths, M>>(
 
 /** A typed client over an `openapi-typescript` `paths` type. */
 export interface Client<Paths> {
+  /** Send a typed `GET` request. */
   get: ClientMethod<Paths, 'get'>
+  /** Send a typed `POST` request. */
   post: ClientMethod<Paths, 'post'>
+  /** Send a typed `PUT` request. */
   put: ClientMethod<Paths, 'put'>
+  /** Send a typed `PATCH` request. */
   patch: ClientMethod<Paths, 'patch'>
+  /** Send a typed `DELETE` request. */
   delete: ClientMethod<Paths, 'delete'>
 }
 
+/** Configuration for {@link createClient}. */
 export interface ClientConfig {
+  /** Base URL prepended to every request path (a trailing slash is trimmed). */
   baseUrl: string
+  /** Headers merged into every request; a call's own `headers` override these on conflict. A JSON `content-type` is added automatically when a body is sent. */
   headers?: Record<string, string>
-  /** Override the fetch implementation (e.g. `app.handle` in tests). */
+  /** Transport override (default: the global `fetch`); pass `(req) => app.handle(req)` to drive an in-memory turnover app with no socket. */
   fetch?: (request: Request) => Promise<Response>
 }
 
-/** Create a typed client for an API described by an `openapi-typescript` `paths` type. */
+/**
+ * Create a typed client for an API described by an `openapi-typescript` `paths` type.
+ *
+ * Path params go under `options.params.path` (substituted into `{name}`
+ * placeholders), query params under `options.params.query`, and the JSON body
+ * under `options.body`. A non-2xx response resolves normally with `error` set
+ * (and `data` undefined) — this client never throws on HTTP status; only a
+ * transport/`fetch` failure rejects.
+ *
+ * @typeParam Paths - the generated `openapi-typescript` `paths` type for the API
+ * @param config - base URL, default headers, and an optional `fetch` override
+ * @returns a {@link Client} with typed `get`/`post`/`put`/`patch`/`delete` methods
+ */
 export function createClient<Paths>(config: ClientConfig): Client<Paths> {
   const base = config.baseUrl.replace(/\/$/, '')
 

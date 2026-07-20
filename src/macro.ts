@@ -6,9 +6,13 @@ import { CLASS_MACROS, ctxMeta, METHOD_MACROS } from './metadata'
  * `@use` / `@derive` / `@intercept` / `@catchError` attach.
  */
 export interface MacroHooks {
+  /** Guards to attach (like `@use`). */
   use?: Guard[]
+  /** Derivers to attach (like `@derive`). */
   derive?: Deriver[]
+  /** Interceptors to attach (like `@intercept`). */
   intercept?: Interceptor[]
+  /** Error handlers to attach (like `@catchError`). */
   catchError?: ErrorHandler[]
 }
 
@@ -20,7 +24,9 @@ export type MacroFactory = (...args: any[]) => MacroHooks
 
 /** One application of a macro on a controller/route: its name and arguments. */
 export interface MacroApplication {
+  /** Name of the registered macro to apply. */
   name: string
+  /** Arguments passed through to the macro's factory. */
   args: unknown[]
 }
 
@@ -28,7 +34,8 @@ const registry = new Map<string, MacroFactory>()
 
 /**
  * Register a named, parameterized bundle of cross-cutting hooks. Apply it to a
- * controller or route with `@macro(name, ...args)`.
+ * controller or route with `@macro(name, ...args)`. Registration is
+ * process-global; re-registering the same `name` replaces the previous factory.
  *
  * ```ts
  * defineMacro("role", (required: string) => {
@@ -37,12 +44,25 @@ const registry = new Map<string, MacroFactory>()
  *                     : new Response("Forbidden", { status: 403 })] };
  * });
  * ```
+ *
+ * @param name - The name the macro is applied by via `@macro(name, ...)`.
+ * @param factory - runs once per application at mount time, inside an injection
+ * context (may `inject()` and close over services), turning the `@macro` args
+ * into the hooks to attach.
  */
 export function defineMacro(name: string, factory: MacroFactory): void {
   registry.set(name, factory)
 }
 
-/** Apply a registered macro (by name, with args) to a controller or route. */
+/**
+ * Apply a registered macro (by name, with args) to a controller or route.
+ *
+ * @param name - a macro registered with {@link defineMacro}; resolved at mount
+ * (by {@link expandMacros}), so it need only be registered before the app
+ * mounts — not before this decorator runs.
+ * @param args - forwarded verbatim to the macro's factory when it expands.
+ * @returns A class/method decorator that records the macro application.
+ */
 export function macro(name: string, ...args: unknown[]) {
   return (
     _value: unknown,
@@ -69,6 +89,11 @@ export function macro(name: string, ...args: unknown[]) {
 /**
  * Expand macro applications into merged hooks. Call inside `container.runInContext`
  * so factories can `inject()`. Throws if a macro name is not registered.
+ *
+ * @param applications - The macro applications to expand, in order.
+ * @returns hooks from every application concatenated in application order; all
+ * four arrays (`use`, `derive`, `intercept`, `catchError`) are always present,
+ * possibly empty.
  */
 export function expandMacros(
   applications: readonly MacroApplication[],

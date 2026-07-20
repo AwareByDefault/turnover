@@ -31,6 +31,14 @@ export interface CsrfOptions {
  * const app = await createApp({ plugins: [csrf()] })
  * // Browser: read the `csrf-token` cookie, send it as `x-csrf-token` on writes.
  * ```
+ *
+ * @remarks Stateless: the token is a random per-browser UUID, minted once and
+ * reused (never rotated), with no server-side record. It therefore does not
+ * defend against XSS or a same-site attacker who can write the cookie (e.g. from
+ * a sibling subdomain) — those need a session-bound token instead.
+ *
+ * @param options - cookie/header names, safe methods, and minted-cookie attributes
+ * @returns a plugin enforcing double-submit-cookie CSRF protection
  */
 export function csrf(options: CsrfOptions = {}): Plugin {
   const cookieName = options.cookie ?? 'csrf-token'

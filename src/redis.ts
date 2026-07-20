@@ -11,22 +11,66 @@ import type { SessionData, SessionStore } from './session'
 
 /** The handful of Redis commands these adapters need. */
 export interface RedisClient {
+  /**
+   * Read a key's value, or null/undefined if it doesn't exist.
+   * @param key - The key to read.
+   * @returns The stored string, or null/undefined when the key is absent.
+   */
   get(key: string): Promise<string | null | undefined>
+  /**
+   * Write a key's value.
+   * @param key - The key to write.
+   * @param value - The string value to store.
+   * @returns Resolves when the write completes; the resolved value is unused.
+   */
   set(key: string, value: string): Promise<unknown>
+  /**
+   * Delete a key.
+   * @param key - The key to delete.
+   * @returns Resolves when the delete completes; the resolved value is unused.
+   */
   del(key: string): Promise<unknown>
-  /** Set a key's time-to-live in seconds. */
+  /**
+   * Set a key's time-to-live in seconds.
+   * @param key - The key to expire.
+   * @param seconds - Seconds from now until the key is removed.
+   * @returns Resolves when the TTL is set; the resolved value is unused.
+   */
   expire(key: string, seconds: number): Promise<unknown>
 }
 
 /** A {@link RedisClient} that can also enumerate keys — needed to clear the cache. */
 export interface RedisCacheClient extends RedisClient {
+  /**
+   * List keys matching a glob-style pattern.
+   * @param pattern - Redis `KEYS`-style glob to match against.
+   * @returns The matching keys.
+   */
   keys(pattern: string): Promise<string[]>
 }
 
 /** Redis hash commands, used to store the job set under a single key. */
 export interface RedisJobClient {
+  /**
+   * Set a field on the hash at `key`.
+   * @param key - The hash key.
+   * @param field - The field within the hash to set.
+   * @param value - The string value to store in the field.
+   * @returns Resolves when the write completes; the resolved value is unused.
+   */
   hset(key: string, field: string, value: string): Promise<unknown>
+  /**
+   * Read every field of the hash at `key`.
+   * @param key - The hash key.
+   * @returns A map of every field to its stored string value.
+   */
   hgetall(key: string): Promise<Record<string, string>>
+  /**
+   * Delete a field from the hash at `key`.
+   * @param key - The hash key.
+   * @param field - The field within the hash to delete.
+   * @returns Resolves when the delete completes; the resolved value is unused.
+   */
   hdel(key: string, field: string): Promise<unknown>
 }
 
@@ -34,7 +78,7 @@ export interface RedisJobClient {
 export interface RedisSessionStoreOptions {
   /** Key prefix (default `"turnover:sess:"`). */
   prefix?: string
-  /** TTL in seconds applied to every write (Redis expires idle sessions). */
+  /** Expiry in **seconds** applied on every write (refreshed each time the session is persisted); omit to keep sessions until they are explicitly destroyed. */
   ttl?: number
 }
 
@@ -48,6 +92,14 @@ export interface RedisSessionStoreOptions {
  *   plugins: [session({ store: redisSessionStore(redis, { ttl: 86_400 }) })],
  * })
  * ```
+ *
+ * @remarks Each session is stored at key `prefix + id` as JSON, so the data bag
+ * must be JSON-serializable. Without a `ttl` option, entries never expire — set
+ * one to reclaim abandoned sessions.
+ *
+ * @param client - Any client satisfying {@link RedisClient}.
+ * @param options - Key prefix and TTL applied to stored sessions.
+ * @returns A {@link SessionStore} that reads and writes sessions in Redis.
  */
 export function redisSessionStore(
   client: RedisClient,
@@ -78,13 +130,19 @@ export interface RedisCacheStoreOptions {
 
 /**
  * A {@link CacheStore} backed by Redis — a shared backend for `@cacheable`
- * across replicas. Values are JSON-encoded with a per-entry TTL; `clear()`
- * removes only this store's prefixed keys (via `KEYS`, so reserve it for
- * eviction, not a hot path).
+ * across replicas. Values are JSON-encoded; each entry is stored at key
+ * `prefix + key`, and `@cacheable`'s millisecond `ttl` is converted to whole
+ * seconds for Redis `EXPIRE` (rounded up, minimum 1s), so sub-second TTLs
+ * become 1s. `clear()` removes only this store's prefixed keys (via `KEYS`, so
+ * reserve it for eviction, not a hot path).
  *
  * ```ts
  * createApp({ providers: [{ provide: CACHE_STORE, useValue: redisCacheStore(redis) }] })
  * ```
+ *
+ * @param client - A {@link RedisCacheClient} (its `keys` command backs `clear()`).
+ * @param options - Key prefix applied to stored cache entries.
+ * @returns A {@link CacheStore} that reads and writes cache entries in Redis.
  */
 export function redisCacheStore(
   client: RedisCacheClient,
@@ -123,12 +181,17 @@ export interface RedisOtpStoreOptions {
 
 /**
  * An {@link OtpStore} backed by Redis — for passwordless codes shared across
- * replicas. Each entry is given a Redis TTL matching the code's own expiry, so
- * spent codes are cleaned up automatically.
+ * replicas. Each entry (stored at key `prefix + identifier`) is given a Redis
+ * TTL derived from the code's own `expiresAt` via `clock` (rounded up to whole
+ * seconds, minimum 1s), so spent codes are cleaned up automatically.
  *
  * ```ts
  * const otp = new Passwordless({ store: redisOtpStore(redis) })
  * ```
+ *
+ * @param client - Any client satisfying {@link RedisClient}.
+ * @param options - Key prefix and clock source used to derive each code's TTL.
+ * @returns An {@link OtpStore} that reads and writes OTP records in Redis.
  */
 export function redisOtpStore(
   client: RedisClient,
@@ -169,6 +232,10 @@ export interface RedisJobStoreOptions {
  * ```ts
  * const jobs = new JobQueue({ store: redisJobStore(redis) })
  * ```
+ *
+ * @param client - A {@link RedisJobClient} providing the hash commands.
+ * @param options - The hash key the job set lives under.
+ * @returns A {@link JobStore} that persists jobs in a single Redis hash.
  */
 export function redisJobStore(
   client: RedisJobClient,

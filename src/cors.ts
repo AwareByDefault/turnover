@@ -10,15 +10,33 @@ export interface CorsOptions {
    * - `false` disables CORS headers.
    */
   origin?: string | string[] | boolean | ((origin: string) => boolean)
-  /** Methods advertised in preflight responses. */
+  /**
+   * Sets `Access-Control-Allow-Methods` on preflight responses. Default:
+   * `GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS`.
+   */
   methods?: string[]
-  /** Allowed request headers; defaults to reflecting the preflight's request. */
+  /**
+   * Sets `Access-Control-Allow-Headers` on preflight responses; when omitted,
+   * reflects the request's `Access-Control-Request-Headers` verbatim.
+   */
   allowedHeaders?: string[]
-  /** Response headers exposed to the browser. */
+  /**
+   * Sets `Access-Control-Expose-Headers` on actual (non-preflight) responses,
+   * naming which response headers browser JS may read. Omitted, the header is
+   * left off (only the CORS-safelisted response headers are readable).
+   */
   exposedHeaders?: string[]
-  /** Allow credentials (cookies/authorization). */
+  /**
+   * When `true`, sets `Access-Control-Allow-Credentials: true` on both preflight
+   * and responses so the browser sends cookies / `Authorization`. Default
+   * `false`. Incompatible with a wildcard `origin: "*"` — reflect a specific
+   * origin instead, or the browser rejects the response.
+   */
   credentials?: boolean
-  /** Preflight cache lifetime, in seconds. */
+  /**
+   * Seconds a browser may cache this preflight result (`Access-Control-Max-Age`).
+   * Omitted, the header is left off and the browser uses its own short default.
+   */
   maxAge?: number
 }
 
@@ -61,6 +79,11 @@ function resolveOrigin(
  *   plugins: [cors({ origin: "https://app.example.com", credentials: true })],
  * });
  * ```
+ *
+ * @param options - CORS behavior; unset fields keep the permissive defaults
+ *   (reflect the request `Origin`, standard method set, reflect requested
+ *   headers, no credentials)
+ * @returns a plugin that answers preflight requests and adds CORS response headers
  */
 export function cors(options: CorsOptions = {}): Plugin {
   const methods = (options.methods ?? DEFAULT_METHODS).join(', ')

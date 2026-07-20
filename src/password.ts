@@ -1,17 +1,17 @@
 import { InjectionToken, injectable, injectOptional } from './di'
 
-/** Supported password-hashing algorithms (Bun's built-ins). */
+/** Supported password-hashing algorithms (Bun's built-ins); `argon2id` — the memory-hard, side-channel-resistant hybrid — is the recommended default. */
 export type PasswordAlgorithm = 'argon2id' | 'argon2i' | 'argon2d' | 'bcrypt'
 
 /** Tuning for {@link PasswordHasher}. Omitted fields use Bun's defaults. */
 export interface PasswordOptions {
   /** Algorithm to hash with (default `"argon2id"`). Verification auto-detects. */
   algorithm?: PasswordAlgorithm
-  /** Argon2 memory cost (KiB). */
+  /** Argon2 memory cost in KiB (higher is more memory-hard and slower); ignored when `algorithm` is `bcrypt`. */
   memoryCost?: number
-  /** Argon2 iteration count. */
+  /** Argon2 iteration count (higher slows both hashing and brute-forcing); ignored when `algorithm` is `bcrypt`. */
   timeCost?: number
-  /** bcrypt cost factor (rounds = 2^cost). */
+  /** bcrypt cost factor — hashing runs `2^cost` rounds, so each +1 doubles the time; ignored for Argon2. */
   cost?: number
 }
 
@@ -61,7 +61,16 @@ export class PasswordHasher {
     return opts
   }
 
-  /** Hash a plaintext password into a self-describing PHC string. */
+  /**
+   * Hash a plaintext password into a self-describing PHC string — the algorithm,
+   * its cost parameters, and a random per-hash salt are all embedded, so no
+   * separate salt column is needed.
+   *
+   * @remarks Under `bcrypt`, Bun silently truncates the input to 72 bytes (a
+   * bcrypt limitation); prefer an Argon2 variant to hash the full password.
+   * @param password - the plaintext to hash; a fresh salt is drawn each call, so the same password produces a different hash every time (never compare hashes for equality — use {@link PasswordHasher.verify}).
+   * @returns A promise for the PHC-format hash string.
+   */
   hash(password: string): Promise<string> {
     return Bun.password.hash(password, this.bunOptions())
   }
@@ -69,6 +78,10 @@ export class PasswordHasher {
   /**
    * Check a plaintext password against a stored hash. Returns `false` (never
    * throws) when the hash is malformed or the password does not match.
+   *
+   * @param password - The plaintext password to check.
+   * @param hash - The stored hash to check against.
+   * @returns A promise for `true` if the password matches, otherwise `false`.
    */
   async verify(password: string, hash: string): Promise<boolean> {
     try {
@@ -82,6 +95,9 @@ export class PasswordHasher {
    * Whether `hash` was produced by a different algorithm than the one currently
    * configured — call after a successful `verify` to transparently upgrade a
    * stored hash (e.g. migrating bcrypt → Argon2id) on the user's next login.
+   *
+   * @param hash - The stored hash to inspect.
+   * @returns `true` if `hash` should be re-hashed with the configured algorithm.
    */
   needsRehash(hash: string): boolean {
     const algorithm = this.options.algorithm ?? 'argon2id'

@@ -40,13 +40,30 @@ interface Metric {
 /** A monotonically increasing counter. */
 export class Counter implements Metric {
   private readonly series = new Map<string, { labels: Labels; value: number }>()
+  /**
+   * Prefer {@link MetricsRegistry.counter}, which registers idempotently by name;
+   * construct directly only for a standalone counter not shared via a registry.
+   */
   constructor(
+    /** Metric name as exposed in the Prometheus output. */
     readonly name: string,
+    /** Help text emitted on the `# HELP` line. */
     readonly help: string,
+    /**
+     * Label names whose values identify each series; only these are recorded
+     * (extras dropped, any omitted at increment become `""`). Keep cardinality
+     * low — every distinct value combination is a separate retained series.
+     */
     readonly labelNames: readonly string[] = [],
   ) {}
 
-  /** Add `value` (default 1, must be ≥ 0) to the series for `labels`. */
+  /**
+   * Add `value` (default 1, must be ≥ 0) to the series for `labels`. Counters
+   * never decrease; pass a positive delta, not the running total.
+   *
+   * @param labels - Values for the declared {@link labelNames}; picks/creates the series.
+   * @param value - Non-negative amount to add (default 1); a negative value throws.
+   */
   inc(labels: Labels = {}, value = 1): void {
     if (value < 0) throw new Error('Counter increments must be non-negative.')
     const key = seriesKey(this.labelNames, labels)
@@ -55,6 +72,11 @@ export class Counter implements Metric {
     else this.series.set(key, { labels: pick(this.labelNames, labels), value })
   }
 
+  /**
+   * Render this counter in Prometheus exposition format.
+   *
+   * @returns The `# HELP`/`# TYPE` header and one line per series.
+   */
   render(): string {
     const lines = [
       `# HELP ${this.name} ${this.help}`,
@@ -70,9 +92,20 @@ export class Counter implements Metric {
 /** A value that can go up or down. */
 export class Gauge implements Metric {
   private readonly series = new Map<string, { labels: Labels; value: number }>()
+  /**
+   * Prefer {@link MetricsRegistry.gauge}, which registers idempotently by name;
+   * construct directly only for a standalone gauge not shared via a registry.
+   */
   constructor(
+    /** Metric name as exposed in the Prometheus output. */
     readonly name: string,
+    /** Help text emitted on the `# HELP` line. */
     readonly help: string,
+    /**
+     * Label names whose values identify each series; only these are recorded
+     * (extras dropped, any omitted become `""`). Keep cardinality low — every
+     * distinct value combination is a separate retained series.
+     */
     readonly labelNames: readonly string[] = [],
   ) {}
 
@@ -86,16 +119,39 @@ export class Gauge implements Metric {
     return entry
   }
 
+  /**
+   * Set the series for `labels` to `value`.
+   *
+   * @param labels - Values for the declared {@link labelNames}; picks/creates the series.
+   * @param value - The new absolute value; a gauge holds any number, including negatives and fractions (unlike a counter).
+   */
   set(labels: Labels, value: number): void {
     this.at(labels).value = value
   }
+  /**
+   * Add `value` (default 1) to the series for `labels`.
+   *
+   * @param labels - Values for the declared {@link labelNames}; picks/creates the series.
+   * @param value - Amount to add (default 1); pass a negative number to subtract.
+   */
   inc(labels: Labels = {}, value = 1): void {
     this.at(labels).value += value
   }
+  /**
+   * Subtract `value` (default 1) from the series for `labels`.
+   *
+   * @param labels - Values for the declared {@link labelNames}; picks/creates the series.
+   * @param value - Amount to subtract (default 1); the series may go negative.
+   */
   dec(labels: Labels = {}, value = 1): void {
     this.at(labels).value -= value
   }
 
+  /**
+   * Render this gauge in Prometheus exposition format.
+   *
+   * @returns The `# HELP`/`# TYPE` header and one line per series.
+   */
   render(): string {
     const lines = [
       `# HELP ${this.name} ${this.help}`,
@@ -117,18 +173,40 @@ interface HistogramSeries {
 
 /** A cumulative histogram of observed values. */
 export class Histogram implements Metric {
+  /**
+   * Bucket upper bounds, sorted ascending at construction; an observation counts
+   * in a bucket when it is `<=` the bound. An implicit `+Inf` bucket is always
+   * emitted, so these need not span the full range.
+   */
   readonly buckets: number[]
   private readonly series = new Map<string, HistogramSeries>()
+  /**
+   * Prefer {@link MetricsRegistry.histogram}, which registers idempotently by
+   * name; construct directly only for a standalone histogram not shared via a
+   * registry. The `buckets` argument is copied and sorted, so ordering is free.
+   */
   constructor(
+    /** Metric name as exposed in the Prometheus output. */
     readonly name: string,
+    /** Help text emitted on the `# HELP` line. */
     readonly help: string,
+    /**
+     * Label names whose values identify each series; only these are recorded
+     * (extras dropped, any omitted become `""`). Keep cardinality low — every
+     * distinct value combination is a separate retained series.
+     */
     readonly labelNames: readonly string[] = [],
     buckets: readonly number[] = DEFAULT_BUCKETS,
   ) {
     this.buckets = [...buckets].sort((a, b) => a - b)
   }
 
-  /** Record `value` into the series for `labels`. */
+  /**
+   * Record one observation into the series for `labels`.
+   *
+   * @param labels - Values for the declared {@link labelNames}; picks/creates the series.
+   * @param value - The sample, in the metric's unit (e.g. seconds); added to `_sum`, bumps `_count`, and increments every bucket whose bound it is `<=`.
+   */
   observe(labels: Labels, value: number): void {
     const key = seriesKey(this.labelNames, labels)
     let entry = this.series.get(key)
@@ -150,6 +228,11 @@ export class Histogram implements Metric {
     })
   }
 
+  /**
+   * Render this histogram (bucket, sum, and count series) in Prometheus exposition format.
+   *
+   * @returns The `# HELP`/`# TYPE` header, then per series: one `_bucket` line per bound carrying an `le` label, the `le="+Inf"` total, a `_sum`, and a `_count`.
+   */
   render(): string {
     const lines = [
       `# HELP ${this.name} ${this.help}`,
@@ -189,7 +272,14 @@ export class MetricsRegistry {
     return metric
   }
 
-  /** Get or create a counter (idempotent by name). */
+  /**
+   * Get or create a counter (idempotent by name).
+   *
+   * @param name - Metric name, also the registry key; a second call with this name returns the first counter and ignores the other arguments.
+   * @param help - Help text for the `# HELP` line.
+   * @param labelNames - Label names keying the series; keep cardinality low, since each distinct value combination is a retained series.
+   * @returns The new or previously registered counter with that name.
+   */
   counter(
     name: string,
     help: string,
@@ -197,11 +287,26 @@ export class MetricsRegistry {
   ): Counter {
     return this.register(new Counter(name, help, labelNames))
   }
-  /** Get or create a gauge (idempotent by name). */
+  /**
+   * Get or create a gauge (idempotent by name).
+   *
+   * @param name - Metric name, also the registry key; a second call with this name returns the first gauge and ignores the other arguments.
+   * @param help - Help text for the `# HELP` line.
+   * @param labelNames - Label names keying the series; keep cardinality low, since each distinct value combination is a retained series.
+   * @returns The new or previously registered gauge with that name.
+   */
   gauge(name: string, help: string, labelNames: readonly string[] = []): Gauge {
     return this.register(new Gauge(name, help, labelNames))
   }
-  /** Get or create a histogram (idempotent by name). */
+  /**
+   * Get or create a histogram (idempotent by name).
+   *
+   * @param name - Metric name, also the registry key; a second call with this name returns the first histogram and ignores the other arguments (including `buckets`).
+   * @param help - Help text for the `# HELP` line.
+   * @param labelNames - Label names keying the series; keep cardinality low, since each distinct value combination is a retained series.
+   * @param buckets - Ascending upper bounds for the cumulative buckets, in the observed unit (default {@link DEFAULT_BUCKETS}, seconds).
+   * @returns The new or previously registered histogram with that name.
+   */
   histogram(
     name: string,
     help: string,
@@ -211,7 +316,11 @@ export class MetricsRegistry {
     return this.register(new Histogram(name, help, labelNames, buckets))
   }
 
-  /** The full exposition text (one block per metric, trailing newline). */
+  /**
+   * The full exposition text (one block per metric, trailing newline).
+   *
+   * @returns The Prometheus exposition text for every registered metric.
+   */
   render(): string {
     return `${[...this.metrics.values()].map((m) => m.render()).join('\n')}\n`
   }
@@ -229,14 +338,18 @@ export interface MetricsOptions {
 
 /**
  * Plugin: auto-instrument HTTP traffic and expose Prometheus metrics. Records
- * `http_requests_total` (counter), `http_request_duration_seconds` (histogram),
- * and `http_requests_in_flight` (gauge) — labelled by method, route *pattern*
- * (low cardinality), and status — and serves the exposition format at
- * `endpoint`. The scrape endpoint is served before routing, so it isn't counted.
+ * `http_requests_total` (counter) and `http_request_duration_seconds`
+ * (histogram) — both labelled by method, route *pattern* (low cardinality), and
+ * status — plus `http_requests_in_flight` (gauge), which is unlabeled (a single
+ * series), and serves the exposition format at `endpoint`. The scrape endpoint
+ * is served before routing, so it isn't counted.
  *
  * ```ts
  * const app = await createApp({ plugins: [metrics()] }) // GET /metrics
  * ```
+ *
+ * @param options - Registry to record into, endpoint path, and histogram buckets.
+ * @returns A plugin that instruments requests and serves the metrics endpoint.
  */
 export function metrics(options: MetricsOptions = {}): Plugin {
   const registry = options.registry ?? new MetricsRegistry()

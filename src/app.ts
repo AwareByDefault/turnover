@@ -85,7 +85,9 @@ export type AfterResponseHook = (
 
 /** A per-request timing event passed to `onTrace` hooks. */
 export interface TraceEvent {
+  /** The request that was handled. */
   req: Request
+  /** The response that was produced (including 404s and errors). */
   response: Response
   /** Total time to handle the request, in milliseconds. */
   durationMs: number
@@ -111,6 +113,14 @@ export type FetchHandler = (request: Request) => Response | Promise<Response>
 export interface BodyParser {
   /** Media types this parser handles — exact, a subtype wildcard, or catch-all. */
   contentTypes: string[]
+  /**
+   * Parse the request body into the value `ctx.body()` returns. Invoked only for
+   * a request whose content-type matched this parser's {@link BodyParser.contentTypes};
+   * the first registered parser to match wins, ahead of the built-in JSON/text default.
+   *
+   * @param req - The incoming request whose body to parse.
+   * @returns The parsed body value (sync or async) that `ctx.body()` resolves to.
+   */
   parse(req: Request): unknown | Promise<unknown>
 }
 
@@ -119,6 +129,13 @@ export interface BodyParser {
  * `undefined` to defer to the next serializer (and finally the JSON default).
  */
 export interface ResponseSerializer {
+  /**
+   * Serialize `value` into a `Response`, or return `undefined` to defer.
+   *
+   * @param value - The handler's (non-`Response`) return value to serialize.
+   * @param ctx - The request context, e.g. to read `ctx.set` or negotiate content.
+   * @returns A `Response`, or `undefined` to defer to the next serializer.
+   */
   serialize(
     value: unknown,
     ctx: Context,
@@ -133,14 +150,23 @@ export interface Plugin {
    * collaborators (e.g. `container.resolveAll(TOKEN)`).
    */
   onInit?: (container: Container) => void
+  /** Pre-routing request hook(s). See {@link App.onRequest}. */
   onRequest?: RequestHook | RequestHook[]
+  /** Post-response hook(s), which may replace the response. See {@link App.onResponse}. */
   onResponse?: ResponseHook | ResponseHook[]
+  /** Fire-and-forget post-response hook(s). See {@link App.onAfterResponse}. */
   onAfterResponse?: AfterResponseHook | AfterResponseHook[]
+  /** Per-request timing hook(s). See {@link App.onTrace}. */
   onTrace?: TraceHook | TraceHook[]
+  /** Hook(s) run once after the server starts. See {@link App.onStart}. */
   onStart?: StartHook | StartHook[]
+  /** Hook(s) run once when the app stops. See {@link App.onStop}. */
   onStop?: StopHook | StopHook[]
+  /** Error handler(s) added to the global chain. See {@link App.onError}. */
   onError?: ErrorHandler | ErrorHandler[]
+  /** Body parsers to register. See {@link App.addParser}. */
   parsers?: BodyParser[]
+  /** Response serializers to register. See {@link App.addSerializer}. */
   serializers?: ResponseSerializer[]
   /**
    * Wrap every request — outermost, around guards, the handler, and error
@@ -151,6 +177,7 @@ export interface Plugin {
   wrap?: Interceptor | Interceptor[]
 }
 
+/** Options for {@link createApp} — what to mount, how to wire DI, and lifecycle hooks. */
 export interface CreateAppOptions {
   /** Directory to scan for `@controller` files. Defaults to the entry's dir. */
   dir?: string
@@ -213,7 +240,8 @@ export interface ListenOptions {
   hostname?: string
   /**
    * Install SIGTERM/SIGINT handlers that gracefully {@link App.stop} then exit
-   * with code 0. Default `true`. Set `false` to manage signals yourself.
+   * (code 0, or 1 if shutdown fails). Default `true`. Set `false` to manage
+   * signals yourself.
    */
   signals?: boolean
 }
@@ -439,7 +467,20 @@ function asArray<T>(value: T | T[]): T[] {
   return Array.isArray(value) ? value : [value]
 }
 
+/**
+ * The mounted application built by {@link createApp} — a router, DI container,
+ * and lifecycle host in one. Exposes a WinterTC fetch handler
+ * ({@link App.fetch}/{@link App.handle}) plus Bun server bootstrap
+ * ({@link App.listen}).
+ *
+ * @remarks
+ * Don't construct it directly; `await createApp(options)` wires the container,
+ * post-processors, plugins, and controllers, then returns the ready `App`. Start
+ * it with `app.listen()` (Bun), drive it in-memory with `app.handle(req)`, or
+ * deploy on any compliant runtime via `export default app` (its `fetch`).
+ */
 export class App {
+  /** The DI container backing this app; controllers and services resolve through it. */
   readonly container: Container
   // The method table for every mounted pattern, kept for `routeTable()` and to
   // merge routes that several controllers contribute to the same pattern.
@@ -478,13 +519,21 @@ export class App {
    */
   readonly fetch: FetchHandler = (request) => this.handle(request)
 
-  /** Register body parser(s), tried by content type before the default. */
+  /**
+   * Register body parser(s), tried by content type before the default.
+   *
+   * @param parsers - Body parsers to add, each matched by its content types.
+   */
   addParser(...parsers: BodyParser[]): this {
     this.parsers.push(...parsers)
     return this
   }
 
-  /** Register response serializer(s), tried before the JSON default. */
+  /**
+   * Register response serializer(s), tried before the JSON default.
+   *
+   * @param serializers - Response serializers to add, tried before the JSON default.
+   */
   addSerializer(...serializers: ResponseSerializer[]): this {
     this.serializers.push(...serializers)
     return this
@@ -502,6 +551,10 @@ export class App {
     return defaultParseBody(req)
   }
 
+  /**
+   * Construct an app around a DI `container` and optional `scheduler`. Prefer
+   * {@link createApp}, which builds and wires everything for you.
+   */
   constructor(container: Container, scheduler: Scheduler = new Scheduler()) {
     this.container = container
     this.scheduler = scheduler
@@ -511,13 +564,19 @@ export class App {
    * Register global error handler(s). They run (in registration order) after a
    * route's/controller's own `@catchError` handlers when a handler or guard
    * throws, until one returns a `Response`. Returns `this` for chaining.
+   *
+   * @param handlers - Global error handlers, run in registration order.
    */
   onError(...handlers: ErrorHandler[]): this {
     this.errorHandlers.push(...handlers)
     return this
   }
 
-  /** Register hook(s) run before routing on every request (e.g. CORS). */
+  /**
+   * Register hook(s) run before routing on every request (e.g. CORS).
+   *
+   * @param hooks - Pre-routing hooks; a returned `Response` short-circuits.
+   */
   onRequest(...hooks: RequestHook[]): this {
     this.requestHooks.push(...hooks)
     return this
@@ -527,19 +586,30 @@ export class App {
    * Register hook(s) run after every response (including 404s and errors),
    * in registration order. Each may return a `Response` to replace the current
    * one, or nothing to keep it.
+   *
+   * @param hooks - Post-response hooks; each may return a `Response` to replace it.
    */
   onResponse(...hooks: ResponseHook[]): this {
     this.responseHooks.push(...hooks)
     return this
   }
 
-  /** Register fire-and-forget hook(s) run after each response (metrics, logging). */
+  /**
+   * Register fire-and-forget hook(s) run after each response (metrics, logging).
+   *
+   * @param hooks - Hooks run after the response is settled; a thrown error or
+   *   rejected promise is caught and logged, and never delays the response.
+   */
   onAfterResponse(...hooks: AfterResponseHook[]): this {
     this.afterResponseHooks.push(...hooks)
     return this
   }
 
-  /** Register hook(s) that receive each request's total timing. */
+  /**
+   * Register hook(s) that receive each request's total timing.
+   *
+   * @param hooks - Hooks called with each request's `TraceEvent` timing.
+   */
   onTrace(...hooks: TraceHook[]): this {
     this.traceHooks.push(...hooks)
     return this
@@ -551,6 +621,8 @@ export class App {
    * `Response` (including error-converted 5xx). The first registered is
    * outermost. Use it to establish a per-request ambient context, e.g. an
    * OpenTelemetry server span whose `context` the handler's spans nest under.
+   *
+   * @param wrappers - Outermost request wrappers; the first registered is outermost.
    */
   wrap(...wrappers: Interceptor[]): this {
     this.requestWrappers.push(...wrappers)
@@ -565,6 +637,9 @@ export class App {
    * `(Request) => Response` — another Turnover app's `app.fetch`, or a raw
    * handler. The delegate owns its whole prefix (including
    * its own 404s); the app's own response hooks still apply to the result.
+   *
+   * @param path - Path prefix to mount under; stripped before handing off.
+   * @param handler - The WinterTC handler that owns requests under `path`.
    */
   delegate(path: string, handler: FetchHandler): this {
     this.delegates.push({ prefix: normalizePath(path), handler })
@@ -578,6 +653,8 @@ export class App {
    * and dispatches its lifecycle callbacks; everything else routes through
    * `handle()` as usual. Only meaningful under `listen()` — `handle()` has no
    * socket to upgrade. One route per app (register the newest).
+   *
+   * @param route - The WebSocket route: its path, upgrade, and lifecycle callbacks.
    */
   websocket(route: WebSocketRoute): this {
     this.wsRoute = route
@@ -598,7 +675,11 @@ export class App {
     return undefined
   }
 
-  /** Register a plugin — a bundle of hooks (e.g. `cors(...)`). */
+  /**
+   * Register a plugin — a bundle of hooks (e.g. `cors(...)`).
+   *
+   * @param plugin - The plugin whose hooks, parsers, and wrappers to register.
+   */
   register(plugin: Plugin): this {
     if (plugin.onInit) plugin.onInit(this.container)
     if (plugin.onRequest) this.onRequest(...asArray(plugin.onRequest))
@@ -615,19 +696,31 @@ export class App {
     return this
   }
 
-  /** Register hook(s) run once after the server starts listening. */
+  /**
+   * Register hook(s) run once after the server starts listening.
+   *
+   * @param hooks - Hooks run once after `listen()`, each given the server.
+   */
   onStart(...hooks: StartHook[]): this {
     this.startHooks.push(...hooks)
     return this
   }
 
-  /** Register hook(s) run once when the app is stopping. */
+  /**
+   * Register hook(s) run once when the app is stopping.
+   *
+   * @param hooks - Hooks run once while stopping, before the server closes.
+   */
   onStop(...hooks: StopHook[]): this {
     this.stopHooks.push(...hooks)
     return this
   }
 
-  /** Stop scheduled tasks, run `onStop` hooks, stop the server, run `@preDestroy`. */
+  /**
+   * Stop scheduled tasks, run `onStop` hooks, stop the server, run `@preDestroy`.
+   *
+   * @param closeActiveConnections - When `true`, close in-flight connections instead of draining them.
+   */
   async stop(closeActiveConnections = false): Promise<void> {
     this.removeSignalHandlers()
     this.scheduler.stop()
@@ -720,7 +813,12 @@ export class App {
     return null
   }
 
-  /** Instantiate a controller (with DI) and wire its routes + guards. */
+  /**
+   * Instantiate a controller (with DI) and wire its routes + guards.
+   *
+   * @param meta - The controller to mount: its class and base path.
+   * @param inherited - Cross-cutting context (prefix, guards, …) from an enclosing module.
+   */
   mount(
     meta: ControllerMeta,
     inherited: InheritedContext = ROOT_CONTEXT,
@@ -923,6 +1021,9 @@ export class App {
    * This is the single request path — `listen()` serves through it — so an
    * in-memory `app.handle(new Request(...))` behaves exactly like a live server.
    * Ideal for tests and offline tooling (e.g. OpenAPI extraction).
+   *
+   * @param req - The incoming Web `Request` to route.
+   * @returns The `Response`, after response and trace hooks have run.
    */
   async handle(req: Request): Promise<Response> {
     const started = this.traceHooks.length > 0 ? performance.now() : 0
@@ -1010,7 +1111,11 @@ export class App {
     return handler(req as ParamRequest)
   }
 
-  /** A `{ pattern: [methods] }` view of what's mounted — handy for logging. */
+  /**
+   * A `{ pattern: [methods] }` view of what's mounted — handy for logging.
+   *
+   * @returns A map from each mounted route pattern to its HTTP methods.
+   */
   routeTable(): Record<string, string[]> {
     const table: Record<string, string[]> = {}
     for (const [pattern, methods] of this.byPattern) {
@@ -1024,6 +1129,9 @@ export class App {
    * `options.toJsonSchema` to include body/query/params/response schemas
    * (Standard Schema doesn't mandate a JSON-Schema export). Serve it however you
    * like — e.g. `app.onRequest((req) => url==="/openapi.json" ? Response.json(app.openapi()) : undefined)`.
+   *
+   * @param options - OpenAPI build options (info, servers, `toJsonSchema`, …).
+   * @returns The generated OpenAPI 3.1 document.
    */
   openapi(options?: OpenApiOptions): OpenApiDocument {
     return buildOpenApi(this.operations, options)
@@ -1038,6 +1146,8 @@ export class App {
    * const app = (await createApp()).docs()
    * app.listen() // GET /openapi.json and /docs are live
    * ```
+   *
+   * @param options - Paths for the JSON spec and UI, and OpenAPI build options.
    */
   docs(options: DocsOptions = {}): this {
     const jsonPath = options.jsonPath ?? '/openapi.json'
@@ -1058,13 +1168,17 @@ export class App {
     return this
   }
 
+  private sigHandlers?: { term: () => void; int: () => void }
+
   /**
    * Start a `Bun.serve` server. Routing goes through `handle()`, so the served
    * behavior matches in-memory `handle()` exactly. Returns Bun's `Server`
    * (`.stop()`, `.port`, `.url`, `.reload()`); pass `0` for an OS-assigned port.
+   *
+   * @param port - Port to bind; defaults to the `PORT` env var, else `3000`.
+   * @param options - Listen options (`hostname`, `signals`).
+   * @returns The Bun `Server` (`.stop()`, `.port`, `.url`, `.reload()`).
    */
-  private sigHandlers?: { term: () => void; int: () => void }
-
   listen(port?: number, options: ListenOptions = {}) {
     const envPort = Bun.env.PORT
     const resolvedPort =
@@ -1256,6 +1370,9 @@ function walkModule(
  * instantiated through the DI container and its routes are built. Call
  * `.listen()` to start a `Bun.serve` server, or `.handle(req)` to drive it
  * in-memory.
+ *
+ * @param options - What to mount, DI wiring, plugins, and lifecycle hooks.
+ * @returns A promise of the ready `App`, after async `@postConstruct` hooks run.
  */
 export async function createApp(options: CreateAppOptions = {}): Promise<App> {
   const container = options.container ?? new Container()

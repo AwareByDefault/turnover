@@ -3,12 +3,17 @@ export type Address = string
 
 /** A message handed to {@link Mailer.send}. */
 export interface Mail {
+  /** Primary recipient(s); at least one is required. A bare string or an array of them. */
   to: Address | Address[]
   /** Sender; falls back to the mailer's default `from`. */
   from?: Address
+  /** Carbon-copy recipient(s). */
   cc?: Address | Address[]
+  /** Blind carbon-copy recipient(s). */
   bcc?: Address | Address[]
+  /** Address replies should be directed to. */
   replyTo?: Address
+  /** Subject line; required (a blank subject is rejected). */
   subject: string
   /** Plain-text body. At least one of `text`/`html` is required. */
   text?: string
@@ -20,14 +25,25 @@ export interface Mail {
 
 /** A normalized message: recipient fields as arrays and a resolved `from`. */
 export interface OutgoingMail extends Mail {
+  /** Primary recipient(s), normalized to an array. */
   to: Address[]
+  /** Resolved sender (message `from`, or the mailer's default). */
   from: Address
+  /** Carbon-copy recipient(s), normalized to an array. */
   cc: Address[]
+  /** Blind carbon-copy recipient(s), normalized to an array. */
   bcc: Address[]
 }
 
 /** Delivers a normalized message. Implement this over SMTP or a mail API. */
 export interface MailTransport {
+  /**
+   * Deliver one already-normalized message. Called once per {@link Mailer.send};
+   * recipient fields are arrays and `from` is resolved. Throw to signal a
+   * delivery failure.
+   *
+   * @param mail - the normalized message to deliver; see {@link OutgoingMail}
+   */
   send(mail: OutgoingMail): Promise<void>
 }
 
@@ -39,7 +55,11 @@ export interface MemoryTransport extends MailTransport {
   clear(): void
 }
 
-/** Build an in-memory transport that captures every message it is handed. */
+/**
+ * Build an in-memory transport that captures every message it is handed.
+ *
+ * @returns a {@link MemoryTransport} whose `sent` array holds captured messages
+ */
 export function memoryTransport(): MemoryTransport {
   const sent: OutgoingMail[] = []
   return {
@@ -82,12 +102,20 @@ export class Mailer {
   private readonly transport: MailTransport
   private readonly defaultFrom?: Address
 
+  /** Build a mailer over `options.transport` (default {@link memoryTransport}) and default `from`. */
   constructor(options: MailerOptions = {}) {
     this.transport = options.transport ?? memoryTransport()
     this.defaultFrom = options.from
   }
 
-  /** Normalize, validate, and deliver a message; returns what was sent. */
+  /**
+   * Normalize (recipient fields to arrays, apply the default `from`), validate,
+   * then hand off to the transport. Throws if `to` is empty, no `from` can be
+   * resolved, `subject` is blank, or neither `text` nor `html` is set.
+   *
+   * @param mail - the message to send; an omitted `from` falls back to the mailer's default
+   * @returns the normalized {@link OutgoingMail} that was handed to the transport
+   */
   async send(mail: Mail): Promise<OutgoingMail> {
     const to = toArray(mail.to)
     if (to.length === 0) {

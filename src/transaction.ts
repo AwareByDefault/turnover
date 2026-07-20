@@ -3,6 +3,13 @@ import { type Ctor, ctxMeta, metadataOf, TRANSACTIONAL } from './metadata'
 
 /** Runs a unit of work: begin → `fn` → commit, or rollback if `fn` throws. */
 export interface TransactionManager {
+  /**
+   * Run `fn` in a transaction: commit its result, or roll back if it throws.
+   *
+   * @typeParam T - The value `fn` produces.
+   * @param fn - The unit of work to run inside the transaction.
+   * @returns A promise for `fn`'s result once the transaction commits.
+   */
   run<T>(fn: () => T | Promise<T>): Promise<T>
 }
 
@@ -17,8 +24,12 @@ const NOOP_MANAGER: TransactionManager = { run: async (fn) => fn() }
 /**
  * Method decorator: run this method inside a transaction from the bound
  * `TransactionManager` (commit on success, roll back on error) — the result
- * becomes a `Promise`. With no manager bound there is no transaction to run, so
- * the method executes as-is (a synchronous method stays synchronous).
+ * becomes a `Promise`, so callers must await it. With no manager bound there is
+ * no transaction to run, so the method executes as-is (a synchronous method
+ * stays synchronous). `@repository` applies this to every method of a class.
+ *
+ * @param _value - The decorated method (unused; metadata is keyed by name).
+ * @param context - The standard method-decorator context; its `name` marks the method.
  */
 export function transactional(
   _value: unknown,
@@ -33,6 +44,9 @@ export function transactional(
 /**
  * A post-processor that wraps `@transactional` methods in the container's
  * `TransactionManager`. Registered automatically by `createApp`.
+ *
+ * @param container - The container used to resolve the bound `TransactionManager`.
+ * @returns A `PostProcessor` that wraps each instance's `@transactional` methods.
  */
 export function transactionalProcessor(container: Container): PostProcessor {
   return (instance, token: Ctor) => {
