@@ -17,17 +17,32 @@ export interface Impersonation {
  * Mark the current session as freshly re-authenticated (a "step up") — call
  * right after the user re-enters a password or completes MFA for a sensitive
  * action. Requires the `session()` plugin.
+ *
+ * @param session - The session to mark as elevated.
+ * @param at - Epoch-ms timestamp of the re-authentication (default now).
  */
 export function elevate(session: Session, at: number = Date.now()): void {
   session.set(STEP_UP_KEY, at)
 }
 
-/** Clear a session's step-up marker. */
+/**
+ * Clear a session's step-up marker, so the next {@link requireStepUp} guard
+ * fails until the user re-authenticates — e.g. call it once the sensitive action
+ * completes to keep the elevation short-lived.
+ *
+ * @param session - The session to clear the step-up marker from.
+ */
 export function clearElevation(session: Session): void {
   session.delete(STEP_UP_KEY)
 }
 
-/** Milliseconds since the session was last elevated, or `undefined` if never. */
+/**
+ * Milliseconds since the session was last elevated, or `undefined` if never.
+ *
+ * @param session - The session to read the step-up marker from.
+ * @param now - Epoch-ms timestamp to measure against (default now).
+ * @returns Milliseconds since the last elevation, or `undefined` if never elevated.
+ */
 export function elevationAge(
   session: Session,
   now: number = Date.now(),
@@ -46,6 +61,8 @@ export function elevationAge(
  * @use(requireStepUp({ within: 5 * 60_000 })) // re-auth within 5 minutes
  * deleteAccount() {}
  * ```
+ *
+ * @param options - Step-up requirements: `within` (max age in ms), plus optional `clock` and `status`.
  */
 export function requireStepUp(options: {
   /** Maximum age of the step-up, in ms. */
@@ -69,6 +86,9 @@ export function requireStepUp(options: {
  * Begin impersonation: record that `actor` is acting as `target` on the current
  * session. Keep the actor's own identity for audit and reversal. Requires the
  * `session()` plugin.
+ *
+ * @param session - The session to record the impersonation on.
+ * @param impersonation - Who is acting as whom (actor and target).
  */
 export function impersonate(
   session: Session,
@@ -77,12 +97,21 @@ export function impersonate(
   session.set(IMPERSONATION_KEY, impersonation)
 }
 
-/** The active impersonation on a session, or `undefined`. */
+/**
+ * The active impersonation on a session, or `undefined`.
+ *
+ * @param session - The session to read the impersonation from.
+ * @returns The active impersonation, or `undefined` if none.
+ */
 export function getImpersonation(session: Session): Impersonation | undefined {
   return session.get<Impersonation>(IMPERSONATION_KEY)
 }
 
-/** End impersonation, reverting to the actor's own identity. */
+/**
+ * End impersonation, reverting to the actor's own identity.
+ *
+ * @param session - The session to end impersonation on.
+ */
 export function stopImpersonation(session: Session): void {
   session.delete(IMPERSONATION_KEY)
 }

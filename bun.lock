@@ -14,6 +14,12 @@
         "bun-types": "latest",
         "typescript": "^7.0.2",
       },
+      "peerDependencies": {
+        "@opentelemetry/api": "^1.9.0",
+      },
+      "optionalPeers": [
+        "@opentelemetry/api",
+      ],
     },
   },
   "packages": {

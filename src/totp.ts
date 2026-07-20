@@ -92,18 +92,31 @@ export class Totp {
   private readonly digits: number
   private readonly algorithm: TotpAlgorithm
 
+  /** Create a TOTP helper with the given period, digits, and algorithm. */
   constructor(options: TotpOptions = {}) {
     this.period = options.period ?? 30
     this.digits = options.digits ?? 6
     this.algorithm = options.algorithm ?? 'SHA1'
   }
 
-  /** A fresh random base32 secret (default 20 bytes / 160 bits). */
+  /**
+   * A fresh random base32 secret (default 20 bytes / 160 bits).
+   *
+   * @param bytes - number of random bytes of entropy (default 20 = 160 bits, the RFC 4226 recommendation; raise, e.g. to 32, for a stronger secret).
+   * @returns The secret, base32-encoded for authenticator apps.
+   */
   generateSecret(bytes = 20): string {
     return base32Encode(randomBytes(bytes))
   }
 
-  /** The code for a base32 `secret` at a given time (default now). */
+  /**
+   * The code for a base32 `secret` at a given time (default now).
+   *
+   * @param secret - The user's base32-encoded shared secret.
+   * @param at - The time to compute the code for (default now).
+   * @returns The current TOTP code, zero-padded to `digits`.
+   * @throws If `secret` is not valid base32 (a character outside the RFC 4648 alphabet).
+   */
   code(secret: string, at: Date = nowDate()): string {
     const counter = Math.floor(at.getTime() / 1000 / this.period)
     return hotp(
@@ -117,6 +130,15 @@ export class Totp {
   /**
    * Whether `token` is valid for `secret`, tolerating clock skew of `±window`
    * time steps (default 1, i.e. the adjacent codes). Constant-time comparison.
+   *
+   * @remarks Each extra `window` step also widens replay exposure: a captured
+   * code stays acceptable for `(2·window + 1) · period` seconds. There is no
+   * built-in single-use tracking — record and reject codes you have already
+   * accepted if replay within that window matters.
+   * @param secret - The user's base32-encoded shared secret.
+   * @param token - the code the user submitted; trimmed before comparison.
+   * @param options - `window` is the ± number of `period` steps of clock skew to accept (default 1 = previous, current, and next code); `at` overrides the reference time (default now).
+   * @throws If `secret` is not valid base32 (a character outside the RFC 4648 alphabet).
    */
   verify(
     secret: string,
@@ -142,7 +164,15 @@ export class Totp {
     return false
   }
 
-  /** An `otpauth://` provisioning URI to render as a QR code for enrolment. */
+  /**
+   * An `otpauth://totp/...` provisioning URI to render as a QR code for
+   * enrolment. This instance's `algorithm`, `digits`, and `period` are embedded
+   * so a compliant app configures itself to match {@link Totp.verify}.
+   *
+   * @remarks Some apps (notably Google Authenticator) ignore those parameters and
+   * assume SHA1 / 6 digits / 30s — keep the defaults for the widest compatibility.
+   * @param options - `secret` (this user's base32 secret), `issuer` (your app name, shown in the authenticator), and `account` (the user's label, e.g. their email); both text fields are URI-encoded.
+   */
   uri(options: { secret: string; issuer: string; account: string }): string {
     const label = encodeURIComponent(`${options.issuer}:${options.account}`)
     const params = new URLSearchParams({

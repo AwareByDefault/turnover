@@ -2,7 +2,7 @@
 // `app.openapi()` produces). Available at the `turnover/codegen` subpath; run it
 // at build time and commit or bundle the output.
 //
-// CLI wrapper (four lines):
+// CLI wrapper (two lines):
 //   const doc = await Bun.file(process.argv[2]).json()
 //   await Bun.write(process.argv[3], generateClient(doc))
 
@@ -10,7 +10,7 @@ import type { OpenApiDocument } from './openapi'
 
 /** Options for {@link generateClient}. */
 export interface GenerateClientOptions {
-  /** Name of the generated factory function (default `"createClient"`). */
+  /** Name of the generated factory function (default `"createClient"`); emitted as `export function <name>`, so it must be a valid JS identifier. */
   clientName?: string
 }
 
@@ -133,6 +133,10 @@ function pathTemplate(path: string): string {
  * const source = generateClient(app.openapi({ info: { title: 'API', version: '1' } }))
  * await Bun.write('client.ts', source)
  * ```
+ *
+ * @param doc - the OpenAPI document to generate the client from
+ * @param options - generation options (e.g. the generated `clientName`)
+ * @returns TypeScript source for a self-contained typed client module
  */
 export function generateClient(
   doc: OpenApiDocument,

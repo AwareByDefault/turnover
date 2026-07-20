@@ -9,6 +9,15 @@ import {
 } from './metadata'
 import { getRequestState } from './request'
 
+/**
+ * The lifecycle scope of a resolved bean.
+ *
+ * @remarks
+ * - `'singleton'` — one shared instance, cached for the container's lifetime (the default).
+ * - `'transient'` — a fresh instance on every resolve.
+ * - `'request'` — one instance per HTTP request, injected as a proxy that resolves the
+ *   current request's cached instance (so it works even inside a longer-lived singleton).
+ */
 export type Scope = 'singleton' | 'transient' | 'request'
 
 /**
@@ -21,9 +30,22 @@ export type Scope = 'singleton' | 'transient' | 'request'
  * ```
  */
 export class InjectionToken<T> {
-  // Phantom, erased at runtime — carries the resolved type for `inject`.
+  /** Phantom field, erased at runtime — carries the resolved type `T` for `inject`. */
   declare readonly _type: T
-  constructor(readonly description: string) {}
+  /**
+   * Create a token.
+   *
+   * @param description - human-readable label for the token, surfaced in error messages and `toString`.
+   */
+  constructor(
+    /** Human-readable label for this token, shown in error messages and `toString`. */
+    readonly description: string,
+  ) {}
+  /**
+   * Render as `InjectionToken<description>`, for logs and error messages.
+   *
+   * @returns the token formatted as `InjectionToken<description>`.
+   */
   toString(): string {
     return `InjectionToken<${this.description}>`
   }
@@ -80,13 +102,23 @@ export class Container {
   // Hooks that wrap/replace each constructed instance (the AOP seam).
   private readonly postProcessors: PostProcessor[] = []
 
-  /** Register a hook that can wrap/replace each constructed instance. */
+  /**
+   * Register a hook that can wrap/replace each constructed instance.
+   *
+   * @param processor - hook run on each freshly constructed instance; returns the object to use in its place.
+   */
   addPostProcessor(processor: PostProcessor): this {
     this.postProcessors.push(processor)
     return this
   }
 
-  /** Run `fn` with this container active, so `inject()` works inside it. */
+  /**
+   * Run `fn` with this container active, so `inject()` works inside it.
+   *
+   * @typeParam T - the value `fn` produces.
+   * @param fn - the function to run with this container as the active injection context.
+   * @returns whatever `fn` returns.
+   */
   runInContext<T>(fn: () => T): T {
     const previous = active
     active = this
@@ -97,7 +129,13 @@ export class Container {
     }
   }
 
-  /** Bind `provider` to `token`. Repeated calls stack (see `resolveAll`). */
+  /**
+   * Bind `provider` to `token`. Repeated calls stack (see `resolveAll`).
+   *
+   * @typeParam T - the type the token resolves to.
+   * @param token - the token to bind.
+   * @param provider - how the token is provided (value/class/factory/alias).
+   */
   register<T>(token: Token<T>, provider: Provider<T>): this {
     const list = this.providers.get(token) ?? []
     list.push(provider as Provider<unknown>)
@@ -105,7 +143,13 @@ export class Container {
     return this
   }
 
-  /** Resolve a token. A registered provider wins; otherwise a class is constructed. */
+  /**
+   * Resolve a token. A registered provider wins; otherwise a class is constructed.
+   *
+   * @typeParam T - the type the token resolves to.
+   * @param token - the token to resolve.
+   * @returns the instance from the winning (last-registered) provider, or a freshly constructed one for an unbound class token; throws for an unbound {@link InjectionToken}.
+   */
   resolve<T>(token: Token<T>): T {
     const bindings = this.providers.get(token)
     if (bindings && bindings.length > 0) {
@@ -119,7 +163,13 @@ export class Container {
     )
   }
 
-  /** Resolve every provider bound to a token (for multi-injection). */
+  /**
+   * Resolve every provider bound to a token (for multi-injection).
+   *
+   * @typeParam T - the type the token resolves to.
+   * @param token - the token to resolve.
+   * @returns one instance per registered binding (empty when none is bound and the token is not a class).
+   */
   resolveAll<T>(token: Token<T>): T[] {
     const bindings = this.providers.get(token)
     if (bindings && bindings.length > 0) {
@@ -129,7 +179,14 @@ export class Container {
     return []
   }
 
-  /** Resolve a token, or return `fallback` if an InjectionToken is unbound. */
+  /**
+   * Resolve a token, or return `fallback` if an InjectionToken is unbound.
+   *
+   * @typeParam T - the type the token resolves to.
+   * @param token - the token to resolve.
+   * @param fallback - returned only when an unbound {@link InjectionToken} is resolved; a class token is still constructed, so the fallback never applies to it.
+   * @returns the resolved instance, or `fallback`.
+   */
   resolveOptional<T>(token: Token<T>, fallback: T): T {
     const bindings = this.providers.get(token)
     if (bindings && bindings.length > 0) {
@@ -305,6 +362,10 @@ export class Container {
  *   private logger = inject(LOGGER); // an InjectionToken
  * }
  * ```
+ *
+ * @typeParam T - the type the token resolves to.
+ * @param token - the dependency to resolve.
+ * @returns the resolved instance.
  */
 export function inject<T>(token: Token<T>): T {
   if (!active) {
@@ -317,7 +378,13 @@ export function inject<T>(token: Token<T>): T {
   return active.resolve(token)
 }
 
-/** Like {@link inject}, but resolves every provider bound to a token. */
+/**
+ * Like {@link inject}, but resolves every provider bound to a token.
+ *
+ * @typeParam T - the type the token resolves to.
+ * @param token - the dependency to resolve.
+ * @returns one instance per registered binding.
+ */
 export function injectAll<T>(token: Token<T>): T[] {
   if (!active) {
     throw new Error(
@@ -327,7 +394,14 @@ export function injectAll<T>(token: Token<T>): T[] {
   return active.resolveAll(token)
 }
 
-/** Like {@link inject}, but returns `fallback` when an InjectionToken is unbound. */
+/**
+ * Like {@link inject}, but returns `fallback` when an InjectionToken is unbound.
+ *
+ * @typeParam T - the type the token resolves to.
+ * @param token - the dependency to resolve.
+ * @param fallback - returned only when an unbound {@link InjectionToken} is resolved; a class token is still constructed, so the fallback never applies to it.
+ * @returns the resolved instance, or `fallback`.
+ */
 export function injectOptional<T>(token: Token<T>, fallback: T): T {
   if (!active) {
     throw new Error(
@@ -337,7 +411,11 @@ export function injectOptional<T>(token: Token<T>, fallback: T): T {
   return active.resolveOptional(token, fallback)
 }
 
-/** Mark a class as injectable, optionally setting its scope (default singleton). */
+/**
+ * Mark a class as injectable, optionally setting its scope (default singleton).
+ *
+ * @param options - optional settings; `scope` selects the lifecycle scope (default `'singleton'`).
+ */
 export function injectable(options: { scope?: Scope } = {}) {
   return (_value: Ctor, context: ClassDecoratorContext): void => {
     ctxMeta(context)[SCOPE] = options.scope ?? 'singleton'
@@ -355,6 +433,8 @@ export const service = injectable
  * transaction to run and methods pass through unchanged (staying synchronous);
  * once one is bound, methods run in it and return promises. Use `@service` or
  * `@injectable` for a non-transactional component.
+ *
+ * @param options - optional settings; `scope` selects the lifecycle scope (default `'singleton'`).
  */
 export function repository(options: { scope?: Scope } = {}) {
   return (value: Ctor, context: ClassDecoratorContext): void => {
@@ -376,9 +456,13 @@ export function repository(options: { scope?: Scope } = {}) {
 
 /**
  * Method decorator: run this method right after the container constructs the
- * instance (once field initializers have run). Sync hooks run inline; async
- * hooks are awaited at bootstrap via `container.init()` (which `createApp`
- * calls). Use it for per-service setup (open a pool, warm a cache).
+ * instance (once field initializers have run). Sync hooks run inline; an async
+ * hook on a **singleton** is awaited at bootstrap via `container.init()` (which
+ * `createApp` calls) — on a transient/request bean it is invoked but not awaited.
+ * Use it for per-service setup (open a pool, warm a cache).
+ *
+ * @param _value - the decorated method (unused; the hook is keyed by name).
+ * @param context - the standard method-decorator context, whose `name` records the hook.
  */
 export function postConstruct(
   _value: unknown,
@@ -394,6 +478,9 @@ export function postConstruct(
  * Method decorator: run this method when the app is stopped (`app.stop()` calls
  * `container.dispose()`), in reverse construction order. Use it to release
  * resources (close connections, flush buffers).
+ *
+ * @param _value - the decorated method (unused; the hook is keyed by name).
+ * @param context - the standard method-decorator context, whose `name` records the hook.
  */
 export function preDestroy(
   _value: unknown,

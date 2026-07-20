@@ -3,13 +3,13 @@ import type { Plugin, RequestHook } from './app'
 
 /** Options for {@link serveStatic}. */
 export interface StaticOptions {
-  /** Directory whose files are served. */
+  /** Directory whose files are served, resolved to an absolute path from the process's working directory. */
   dir: string
   /** URL prefix to mount under (default `"/"`). Stripped before file lookup. */
   prefix?: string
   /** File served for a directory request (default `"index.html"`; `""` disables). */
   index?: string
-  /** `Cache-Control` header applied to every served file. */
+  /** `Cache-Control` header value set on every served file; omit to send none. */
   cacheControl?: string
 }
 
@@ -30,6 +30,9 @@ function normalizePrefix(prefix: string): string {
  * ```ts
  * const app = await createApp({ plugins: [serveStatic({ dir: './public' })] })
  * ```
+ *
+ * @param options - the source `dir`, URL `prefix`, `index` file, and `cacheControl`
+ * @returns a plugin that serves matching files as a pre-routing hook
  */
 export function serveStatic(options: StaticOptions): Plugin {
   const prefix = normalizePrefix(options.prefix ?? '/')

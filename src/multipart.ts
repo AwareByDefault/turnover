@@ -13,11 +13,11 @@ export class UploadedFile {
     private readonly file: File,
   ) {}
 
-  /** The client-supplied filename. */
+  /** The client-supplied filename — untrusted; sanitize before using it as a filesystem path. May be empty. */
   get filename(): string {
     return this.file.name
   }
-  /** The declared MIME type. */
+  /** The client-declared MIME type (the part's `Content-Type`), not sniffed from the bytes — treat it as a hint, not a guarantee. */
   get type(): string {
     return this.file.type
   }
@@ -30,11 +30,22 @@ export class UploadedFile {
     return this.file
   }
 
-  /** Read the whole file as bytes. */
+  /**
+   * Read the entire file into memory as bytes. The upload is already fully in
+   * memory (the whole body was buffered by `req.formData()` during parsing), so
+   * this only copies it into a `Uint8Array`; use {@link UploadedFile.blob} to
+   * pass the `File` through without the extra copy.
+   *
+   * @returns the full contents as a `Uint8Array`
+   */
   async bytes(): Promise<Uint8Array> {
     return new Uint8Array(await this.file.arrayBuffer())
   }
-  /** Read the whole file as text. */
+  /**
+   * Read the entire file into memory and decode it as UTF-8 text.
+   *
+   * @returns the file's contents decoded as a string
+   */
   text(): Promise<string> {
     return this.file.text()
   }
@@ -73,9 +84,10 @@ function typeAllowed(type: string, allowed: string[]): boolean {
 
 /**
  * Plugin: parse `multipart/form-data` bodies into `{ fields, files }`, readable
- * through `ctx.body<MultipartBody>()` like any other body. Enforces optional
- * count/size/type limits up front (using each file's known size, without
- * buffering) and rejects violations with `400`/`413`/`415`.
+ * through `ctx.body<MultipartBody>()` like any other body. `req.formData()`
+ * first buffers the entire request body into memory; the optional
+ * count/size/type limits then reject violations with `400`/`413`/`415` but do
+ * not cap what is read into memory — that ceiling is Bun's `maxRequestBodySize`.
  *
  * ```ts
  * const app = await createApp({
@@ -83,6 +95,9 @@ function typeAllowed(type: string, allowed: string[]): boolean {
  * })
  * // in a handler: const { fields, files } = await ctx.body<MultipartBody>()
  * ```
+ *
+ * @param options - optional count/size/type upload limits
+ * @returns a plugin registering a `multipart/form-data` body parser
  */
 export function multipart(options: MultipartOptions = {}): Plugin {
   const parse = async (req: Request): Promise<MultipartBody> => {

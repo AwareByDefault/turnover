@@ -25,7 +25,7 @@ export const HEALTH_CHECK = new InjectionToken<HealthCheck>('HEALTH_CHECK')
 
 /** Options for the {@link health} plugin. */
 export interface HealthOptions {
-  /** Readiness checks aggregated by the readiness endpoint. */
+  /** Extra readiness checks, run on every `/ready` request alongside any {@link HEALTH_CHECK} providers; all run concurrently and every one must pass for a `200`. */
   checks?: HealthCheck[]
   /** Liveness path (the process is serving). Default `/health`. */
   livenessPath?: string
@@ -46,6 +46,9 @@ export interface HealthOptions {
  * })
  * // GET /health → 200 {status:"up"}; GET /ready → 200/503 with per-check status
  * ```
+ *
+ * @param options - Endpoint paths and any explicit readiness checks.
+ * @returns A plugin serving the liveness and readiness probe endpoints.
  */
 export function health(options: HealthOptions = {}): Plugin {
   const liveness = options.livenessPath ?? '/health'

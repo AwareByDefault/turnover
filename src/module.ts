@@ -7,19 +7,19 @@ import { type Ctor, ctxMeta, MODULE } from './metadata'
  * with all of them (and with any nested modules).
  */
 export interface ModuleOptions {
-  /** Path prefix prepended to every route mounted by this module. */
+  /** Path prefix prepended to every route mounted here; nested modules' prefixes concatenate outer-to-inner. */
   prefix?: string
-  /** Controllers mounted by this module. */
+  /** Controllers mounted here — each gets this prefix and all the cross-cutting concerns below. */
   controllers?: Ctor[]
-  /** Nested modules, mounted under this module's prefix and cross-cutting. */
+  /** Nested modules, mounted under this module's prefix and inheriting its cross-cutting concerns. */
   modules?: Ctor[]
-  /** Guards applied before every route in this module (and nested modules). */
+  /** Guards for every route in this module (and nested modules); run before controller- and route-level guards. */
   use?: Guard[]
-  /** Derivers run before every route in this module (and nested modules). */
+  /** Derivers for every route in this module (and nested); run before guards, outermost-first (module → controller → route). */
   derive?: Deriver[]
-  /** Interceptors wrapping every route in this module (and nested modules). */
+  /** Interceptors wrapping every route in this module (and nested); the module's wrap the controller's, which wrap the route's. */
   intercept?: Interceptor[]
-  /** Error handlers for every route in this module (and nested modules). */
+  /** Error handlers for every route in this module (and nested); tried after route and controller handlers but before the global one. */
   catchError?: ErrorHandler[]
 }
 
@@ -37,6 +37,9 @@ export interface ModuleOptions {
  * })
  * class AdminModule {}
  * ```
+ *
+ * @param options - module configuration (prefix, controllers, nested modules, cross-cutting concerns)
+ * @returns a class decorator that records the module's metadata
  */
 export function module(options: ModuleOptions = {}) {
   return (_value: Ctor, context: ClassDecoratorContext): void => {

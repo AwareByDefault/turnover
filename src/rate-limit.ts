@@ -3,6 +3,13 @@ import type { Context, Interceptor } from './http'
 
 /** A rate-limit counter store: record a hit, report the count + reset time. */
 export interface RateLimitStore {
+  /**
+   * Record a hit for `key` in a `windowMs` window; returns the running count and
+   * milliseconds until the window resets.
+   *
+   * @param key - the bucket key identifying the client
+   * @param windowMs - length of the fixed window, in milliseconds
+   */
   hit(
     key: string,
     windowMs: number,
@@ -11,7 +18,14 @@ export interface RateLimitStore {
     | Promise<{ count: number; resetMs: number }>
 }
 
-/** In-memory fixed-window counter (per key) — the default store. */
+/**
+ * In-memory fixed-window counter, one window per key — the default
+ * {@link rateLimit} store. Counts live in a single process and vanish on
+ * restart, so it only limits per instance; use a shared store (e.g. Redis)
+ * to enforce one limit across several instances.
+ *
+ * @returns a {@link RateLimitStore} backed by an in-process map
+ */
 export function memoryRateLimitStore(): RateLimitStore {
   const windows = new Map<string, { count: number; expires: number }>()
   return {
@@ -30,9 +44,9 @@ export function memoryRateLimitStore(): RateLimitStore {
 
 /** Options for {@link rateLimit}. */
 export interface RateLimitOptions {
-  /** Max requests allowed per window. */
+  /** Max requests permitted per window; the next request in the same window gets `429`. Required. */
   limit: number
-  /** Window length in milliseconds. */
+  /** Length of the fixed window, in milliseconds; the count resets once it elapses. Required. */
   windowMs: number
   /** Bucket key for a request. Default: the `X-Forwarded-For` header, else `"global"`. */
   keyBy?: (ctx: Context) => string
@@ -52,6 +66,10 @@ export interface RateLimitOptions {
  *   plugins: [rateLimit({ limit: 100, windowMs: 60_000 })],
  * })
  * ```
+ *
+ * @param options - `limit` and `windowMs` are required; `keyBy` and `store`
+ *   default to per-`X-Forwarded-For` bucketing and an in-memory fixed window
+ * @returns a plugin that enforces the limit with `429` and rate-limit headers
  */
 export function rateLimit(options: RateLimitOptions): Plugin {
   const store = options.store ?? memoryRateLimitStore()

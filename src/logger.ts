@@ -13,14 +13,19 @@ const LEVELS: Record<LogLevel, number> = {
 
 /** A structured log record: level, message, time, request id, and any fields. */
 export interface LogRecord {
+  /** Severity of the record. */
   level: LogLevel
+  /** Human-readable event message; keep it stable and put variable data in the free-form fields below. */
   msg: string
+  /** ISO-8601 timestamp of when the record was emitted. */
   time: string
+  /** Correlation id of the request that produced it, when inside one. */
   requestId?: string
+  /** Arbitrary structured fields merged into the record. */
   [key: string]: unknown
 }
 
-/** Where log records go. */
+/** Consumes each emitted record (already past the level filter); called synchronously, once per record. */
 export type LogSink = (record: LogRecord) => void
 
 /** Override where log records go (default: JSON to stdout, warn/error to stderr). */
@@ -44,9 +49,10 @@ function envLevel(): LogLevel {
 
 /**
  * Structured, injectable logger. Quiet by default — only records at or above the
- * minimum level (`info` unless `LOG_LEVEL` says otherwise) are emitted — and
- * every record is automatically stamped with the current request's id (see
- * {@link requestId}), so logs correlate to requests with no plumbing.
+ * minimum level (`info` unless `LOG_LEVEL` says otherwise) are emitted — and,
+ * when the {@link requestId} plugin is active, each record emitted inside a
+ * request is stamped with its id, so logs correlate to requests with no per-call
+ * plumbing.
  *
  * ```ts
  * class Orders {
@@ -79,19 +85,39 @@ export class Logger {
     })
   }
 
-  /** Log at `debug` (suppressed unless the level allows it). */
+  /**
+   * Log at `debug` — the lowest level, dropped unless the minimum is `debug`.
+   *
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins.
+   */
   debug(msg: string, fields?: Record<string, unknown>): void {
     this.write('debug', msg, fields)
   }
-  /** Log at `info`. */
+  /**
+   * Log at `info` — the default minimum level; goes to stdout via the default sink.
+   *
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins.
+   */
   info(msg: string, fields?: Record<string, unknown>): void {
     this.write('info', msg, fields)
   }
-  /** Log at `warn`. */
+  /**
+   * Log at `warn` — routed to stderr (not stdout) by the default sink.
+   *
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins.
+   */
   warn(msg: string, fields?: Record<string, unknown>): void {
     this.write('warn', msg, fields)
   }
-  /** Log at `error`. */
+  /**
+   * Log at `error` — the highest level; routed to stderr by the default sink.
+   *
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins. Pass a caught error under a field (e.g. `{ err }`) rather than as `msg`.
+   */
   error(msg: string, fields?: Record<string, unknown>): void {
     this.write('error', msg, fields)
   }

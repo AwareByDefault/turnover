@@ -13,7 +13,7 @@
  */
 
 /** Every custom check, by basename of its `checks/<name>.ts` file. */
-export const CHECKS = ['best-practices-numbering'] as const
+export const CHECKS = ['best-practices-numbering', 'tsdoc-coverage'] as const
 
 /** A check's name. */
 export type CheckName = (typeof CHECKS)[number]
@@ -32,5 +32,12 @@ export const REGISTRY: Record<CheckName, Enforcement> = {
   'best-practices-numbering': {
     doc: 'contributing/linting-best-practices.md',
     rules: ['§8 (mechanical enforcement of the N.M citation scheme)'],
+  },
+  'tsdoc-coverage': {
+    doc: 'contributing/coding-best-practices.md',
+    rules: [
+      '§6.3 (JSDoc on every exported symbol)',
+      '§6.4 (signature-driven doc richness at 100% coverage)',
+    ],
   },
 }

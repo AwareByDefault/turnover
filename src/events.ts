@@ -6,7 +6,7 @@ export type EventType<E extends object = object> = abstract new (
   ...args: any[]
 ) => E
 
-/** A subscriber to an event. */
+/** A subscriber to an event; may be async — {@link Events.publish} awaits its result and logs (never rethrows) a rejection. */
 export type EventListener<E> = (event: E) => unknown
 
 /**
@@ -18,7 +18,16 @@ export type EventListener<E> = (event: E) => unknown
 export class Events {
   private readonly listeners = new Map<EventType, Set<EventListener<object>>>()
 
-  /** Subscribe to an event type. Returns an unsubscribe function. */
+  /**
+   * Subscribe to an event type. Matching is by exact event class — a listener on
+   * a base class does not receive published subclass instances (dispatch keys off
+   * `event.constructor`). Returns an unsubscribe function.
+   *
+   * @typeParam E - The event object type this listener receives.
+   * @param type - The event class to subscribe to.
+   * @param listener - invoked (and awaited) for each published event of `type`.
+   * @returns an unsubscribe function; calling it removes this listener (repeat calls are no-ops).
+   */
   on<E extends object>(
     type: EventType<E>,
     listener: EventListener<E>,
@@ -32,7 +41,15 @@ export class Events {
     return () => set?.delete(listener as EventListener<object>)
   }
 
-  /** Publish an event to every subscriber of its class; resolves when all finish. */
+  /**
+   * Invoke every subscriber of the event's exact class concurrently; resolve once
+   * all have settled. A listener that throws or rejects is caught and logged
+   * (`console.error`, `[turnover]` prefix) and never fails this call, so one bad
+   * listener cannot block the others. No subscribers is a no-op.
+   *
+   * @typeParam E - The event object type being published.
+   * @param event - the instance to deliver; its exact `constructor` selects the subscribers.
+   */
   async publish<E extends object>(event: E): Promise<void> {
     const set = this.listeners.get(event.constructor as EventType)
     if (!set || set.size === 0) return
@@ -63,6 +80,10 @@ interface EventListenerMeta {
  *   @onEvent(UserCreated) welcome(e: UserCreated) { ... }
  * }
  * ```
+ *
+ * @typeParam E - The event object type the decorated method handles.
+ * @param type - The event class to subscribe the method to.
+ * @returns A method decorator that records the subscription.
  */
 export function onEvent<E extends object>(type: EventType<E>) {
   return (_value: unknown, context: ClassMethodDecoratorContext): void => {
@@ -77,6 +98,9 @@ export function onEvent<E extends object>(type: EventType<E>) {
 /**
  * A post-processor that subscribes a constructed instance's `@onEvent` methods
  * to the container's `Events` bus. Registered automatically by `createApp`.
+ *
+ * @param container - The container whose `Events` bus receives the subscriptions.
+ * @returns A `PostProcessor` that wires each instance's `@onEvent` methods.
  */
 export function eventListenerProcessor(container: Container): PostProcessor {
   return (instance, token: Ctor) => {

@@ -3,7 +3,7 @@ import type { Interceptor } from './http'
 
 /** Options for the {@link etag} plugin. */
 export interface EtagOptions {
-  /** Request methods that receive an ETag. Default `["GET"]`. */
+  /** Request methods that receive an ETag (compared case-insensitively). Default `["GET"]`. */
   methods?: string[]
 }
 
@@ -20,6 +20,9 @@ export interface EtagOptions {
  *
  * The body is buffered to hash it, so pair it with GET endpoints rather than
  * large streaming responses.
+ *
+ * @param options - which request methods receive an ETag (default `GET`)
+ * @returns a plugin that adds weak ETags and answers `304 Not Modified`
  */
 export function etag(options: EtagOptions = {}): Plugin {
   const methods = new Set(

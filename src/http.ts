@@ -21,22 +21,47 @@ import type { OperationMeta } from './openapi'
 import type { RequestStore } from './request'
 import type { RouteSchemas } from './schema'
 
-/** Per-request context passed to every route handler. */
+/**
+ * Per-request context passed to every route handler.
+ *
+ * @typeParam Params - shape of the path params captured from the route pattern.
+ */
 export interface Context<
   Params extends Record<string, string> = Record<string, string>,
 > {
+  /**
+   * The raw incoming Web `Request`. Read the body through {@link Context.body}
+   * (cached and parser-aware) rather than `req.json()`/`req.text()` directly, and
+   * prefer {@link Context.route} over `req.url` for low-cardinality labels.
+   */
   readonly req: Request
   /**
    * The matched route pattern (e.g. `/users/:id`) — low-cardinality, unlike
    * `req.url`. Use it for telemetry span names / metric labels and structured
-   * logging. `""` for a 404 (no route matched).
+   * logging.
    */
   readonly route: string
-  /** Path params captured from the route pattern (e.g. `/:id`). */
+  /**
+   * Path params captured from the route pattern (e.g. `:id`), already
+   * URL-decoded. An empty object when the pattern has no `:param` segments.
+   */
   readonly params: Params
-  /** Parsed query string. */
+  /**
+   * The request's query string as `URLSearchParams` — raw and uncoerced; use
+   * `getAll` for repeated keys. A declared `query` schema validates a flattened
+   * object form (repeated keys become arrays) into {@link ValidatedInputs.query}
+   * instead.
+   */
   readonly query: URLSearchParams
-  /** Lazily read + parse the raw body (JSON when the content-type says so). */
+  /**
+   * Lazily read and parse the request body through the registered
+   * {@link BodyParser}s — JSON when the content-type says so, an empty body as
+   * `undefined`, otherwise the raw text. This is the *raw* parsed value;
+   * schema-validated input lives on {@link Context.valid}.
+   *
+   * @typeParam T - The expected parsed-body type you assert (it is not validated).
+   * @returns A promise of the parsed body, cached so repeated calls read it once.
+   */
   body<T = unknown>(): Promise<T>
   /**
    * Validated inputs, populated for whichever of `body`/`query`/`params` the
@@ -49,14 +74,22 @@ export interface Context<
   readonly set: ResponseState
   /** Read incoming cookies and queue `Set-Cookie`s on the response. */
   readonly cookies: Cookies
-  /** Per-request values populated by `@derive` handlers (augment `RequestStore`). */
+  /**
+   * Per-request scratch space, populated by `@derive` handlers (before guards)
+   * and `@resolve` handlers (after validation). Augment `RequestStore` to type
+   * your own fields; the same object is reachable off the request via
+   * `getRequestStore()`.
+   */
   readonly store: RequestStore
 }
 
 /** Validated request inputs; a field is set only when its schema is declared. */
 export interface ValidatedInputs {
+  /** Validated (and coerced) body — set when a `body` schema is declared. */
   body?: unknown
+  /** Validated query object — set when a `query` schema is declared. */
   query?: unknown
+  /** Validated path params — set when a `params` schema is declared. */
   params?: unknown
 }
 
@@ -79,7 +112,7 @@ export type Guard = (ctx: Context) => void | Response | Promise<void | Response>
  * An error handler. Runs when a route handler or guard throws (anything other
  * than a `Response`, which short-circuits directly). Return a `Response` to
  * handle the error, or return nothing to defer to the next handler in the chain
- * (route → controller → global → the framework default).
+ * (route → controller → module → global → the framework default).
  */
 export type ErrorHandler = (
   err: unknown,
@@ -108,14 +141,21 @@ export type Interceptor = (
   next: () => Promise<Response>,
 ) => Response | Promise<Response>
 
+/** A registered controller: its class and the base path it mounts under. */
 export interface ControllerMeta {
+  /** The controller class (constructor), resolved through DI at mount time. */
   target: Ctor
+  /** Base path prepended to every route in the controller (from `@controller`). */
   base: string
 }
 
 const controllers: ControllerMeta[] = []
 
-/** Controllers registered so far (populated as their modules are imported). */
+/**
+ * Controllers registered so far (populated as their modules are imported).
+ *
+ * @returns The controllers on the global registry, in registration order.
+ */
 export function registeredControllers(): readonly ControllerMeta[] {
   return controllers
 }
@@ -124,6 +164,9 @@ export function registeredControllers(): readonly ControllerMeta[] {
  * Class decorator: register a class as a REST controller mounted under `base`.
  * Routes and guards are read from the class metadata at mount time, so the
  * relative order of `@controller` and `@use` does not matter.
+ *
+ * @param base - Base path prepended to every route in the controller (default `""`).
+ * @returns A class decorator that registers the controller.
  */
 export function controller(base = '') {
   return (value: Ctor, context: ClassDecoratorContext): void => {
@@ -137,6 +180,7 @@ export function controller(base = '') {
 
 /** Options a route decorator accepts: validation schemas plus OpenAPI metadata. */
 export interface RouteOptions extends RouteSchemas {
+  /** OpenAPI operation metadata (summary, tags, …) for this route. */
   openapi?: OperationMeta
 }
 
@@ -159,9 +203,13 @@ function route(method: HttpMethod) {
   }
 }
 
+/** Declare a `GET` route on a controller method. */
 export const get = route('GET')
+/** Declare a `POST` route on a controller method. */
 export const post = route('POST')
+/** Declare a `PUT` route on a controller method. */
 export const put = route('PUT')
+/** Declare a `PATCH` route on a controller method. */
 export const patch = route('PATCH')
 /** DELETE route (`delete` is a reserved word, so the decorator is named `del`). */
 export const del = route('DELETE')
@@ -176,6 +224,9 @@ export const del = route('DELETE')
  *   @get("/") @use(requireAdmin) dashboard() { ... }  // plus this one only
  * }
  * ```
+ *
+ * @param guards - Guards to run before the handler, in listed order.
+ * @returns A class or method decorator that attaches the guards.
  */
 export function use(...guards: Guard[]) {
   return (
@@ -202,13 +253,16 @@ export function use(...guards: Guard[]) {
 /**
  * Attach error handlers to a controller (every route) or a single route. They
  * run when a handler/guard throws, most-specific first (route → controller →
- * global), until one returns a `Response`.
+ * module → global → the framework default), until one returns a `Response`.
  *
  * ```ts
  * @controller("/orders")
  * @catchError((err) => err instanceof DomainError ? Response.json(...) : undefined)
  * class OrdersController { ... }
  * ```
+ *
+ * @param handlers - Error handlers tried in order until one returns a `Response`.
+ * @returns A class or method decorator that attaches the error handlers.
  */
 export function catchError(...handlers: ErrorHandler[]) {
   return (
@@ -244,6 +298,9 @@ export function catchError(...handlers: ErrorHandler[]) {
  * @derive((ctx) => ({ tenant: ctx.req.headers.get("x-tenant") }))
  * class OrdersController { ... }
  * ```
+ *
+ * @param derivers - Derivers run before guards to populate `ctx.store`.
+ * @returns A class or method decorator that attaches the derivers.
  */
 export function derive(...derivers: Deriver[]) {
   return (
@@ -271,6 +328,9 @@ export function derive(...derivers: Deriver[]) {
  * Like `@derive`, but runs *after* guards and validation — so it can read
  * `ctx.valid`. Populate `ctx.store` with values derived from validated input
  * (e.g. load the entity named by a now-validated `:id`).
+ *
+ * @param resolvers - Derivers run after validation to populate `ctx.store`.
+ * @returns A class or method decorator that attaches the resolvers.
  */
 export function resolve(...resolvers: Deriver[]) {
   return (
@@ -306,6 +366,9 @@ export function resolve(...resolvers: Deriver[]) {
  *   return res;
  * }) list() { ... }
  * ```
+ *
+ * @param interceptors - Interceptors wrapping the handler; each calls `next()`.
+ * @returns A class or method decorator that attaches the interceptors.
  */
 export function intercept(...interceptors: Interceptor[]) {
   return (

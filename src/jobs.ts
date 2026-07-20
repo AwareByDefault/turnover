@@ -1,10 +1,17 @@
-/** Lifecycle state of a queued job. */
+/**
+ * Lifecycle state of a queued job: `pending` until a handler succeeds
+ * (`completed`) or its attempts run out (`failed`). There is no separate
+ * "running" state.
+ */
 export type JobStatus = 'pending' | 'completed' | 'failed'
 
 /** A unit of deferred work. */
 export interface Job<T = unknown> {
+  /** Unique id assigned at enqueue time, of the form `type-seq-enqueueMillis`. */
   readonly id: string
+  /** The registered handler type this job routes to. */
   readonly type: string
+  /** Arbitrary work data handed to the handler. */
   readonly payload: T
   /** How many times the handler has run (including the current attempt). */
   attempts: number
@@ -12,8 +19,9 @@ export interface Job<T = unknown> {
   readonly maxAttempts: number
   /** Epoch ms the job is eligible to run at (for delays and backoff). */
   runAt: number
+  /** Current lifecycle state; see {@link JobStatus}. */
   status: JobStatus
-  /** Message of the last handler error, if any. */
+  /** `message` of the error thrown by the most recent failed attempt (no stack); cleared once an attempt succeeds. */
   lastError?: string
 }
 
@@ -28,13 +36,36 @@ export type JobHandler<T = unknown> = (
  * it; the default is in-memory.
  */
 export interface JobStore {
+  /**
+   * Persist a newly enqueued job, keyed by its `id`.
+   *
+   * @param job - The newly enqueued job (status `pending`) to store.
+   */
   add(job: Job): Promise<void>
-  /** Pending jobs eligible at `now`, soonest first. */
+  /**
+   * Pending jobs eligible at `now`, soonest first.
+   *
+   * @param now - Epoch ms cutoff; jobs whose `runAt` is at or before this are due.
+   * @returns The eligible pending jobs, soonest `runAt` first.
+   */
   due(now: number): Promise<Job[]>
+  /**
+   * Persist an updated job, replacing any prior record with the same `id`.
+   *
+   * @param job - The job whose mutated state (attempts, status, `runAt`) should be written back.
+   */
   save(job: Job): Promise<void>
-  /** Dead-lettered jobs (attempts exhausted). */
+  /**
+   * Dead-lettered jobs (attempts exhausted).
+   *
+   * @returns Every job that exhausted its attempts.
+   */
   failed(): Promise<Job[]>
-  /** Count of jobs still pending. */
+  /**
+   * Count of jobs still pending.
+   *
+   * @returns The number of jobs still awaiting processing.
+   */
   pending(): Promise<number>
 }
 
@@ -69,7 +100,7 @@ export interface JobQueueOptions {
   store?: JobStore
   /** Default attempt limit per job (default 3). */
   maxAttempts?: number
-  /** Retry delay (ms) before attempt N. Default exponential: `1000 * 2^(N-2)`. */
+  /** Delay in milliseconds before attempt N (the number of the upcoming try). Default exponential `1000 * 2^(N-2)`: 1s before attempt 2, 2s before 3, 4s before 4. */
   backoff?: (attempt: number) => number
   /** Clock source (default `Date.now`). Override for deterministic tests. */
   clock?: () => number
@@ -77,7 +108,7 @@ export interface JobQueueOptions {
 
 /** Options for a single {@link JobQueue.enqueue}. */
 export interface EnqueueOptions {
-  /** Delay before the job becomes eligible, in ms. */
+  /** Milliseconds to wait, measured from enqueue time, before the job becomes eligible to run (default 0 — eligible immediately). */
   delay?: number
   /** Override the queue's default attempt limit. */
   maxAttempts?: number
@@ -107,6 +138,7 @@ export class JobQueue {
   private timer: ReturnType<typeof setInterval> | undefined
   private seq = 0
 
+  /** Create a job queue, taking its store, attempt limit, backoff, and clock from `options`. */
   constructor(options: JobQueueOptions = {}) {
     this.store = options.store ?? memoryJobStore()
     this.defaultMaxAttempts = options.maxAttempts ?? 3
@@ -114,13 +146,27 @@ export class JobQueue {
     this.now = options.clock ?? Date.now
   }
 
-  /** Register the handler for a job `type` (one per type; last wins). */
+  /**
+   * Register the handler for a job `type` (one per type; last wins).
+   *
+   * @typeParam T - The payload type this handler expects.
+   * @param type - The job type this handler is registered for.
+   * @param handler - The function invoked with each job's payload of this type.
+   */
   on<T>(type: string, handler: JobHandler<T>): this {
     this.handlers.set(type, handler as JobHandler)
     return this
   }
 
-  /** Enqueue a job and return its id. */
+  /**
+   * Enqueue a job and return its id.
+   *
+   * @typeParam T - The payload type for this job.
+   * @param type - The registered handler type to route this job to.
+   * @param payload - The work data handed to the handler.
+   * @param options - Per-job delay and attempt-limit overrides.
+   * @returns The generated id of the enqueued job.
+   */
   async enqueue<T>(
     type: string,
     payload: T,
@@ -145,6 +191,9 @@ export class JobQueue {
    * Run every job eligible at `now` (default the queue clock) once, in due
    * order, and return how many ran. A handler that throws (or a missing handler)
    * reschedules with backoff, or dead-letters once attempts are spent.
+   *
+   * @param now - Epoch ms cutoff; jobs whose `runAt` is at or before it run (default the queue clock).
+   * @returns How many jobs ran this pass.
    */
   async process(now: number = this.now()): Promise<number> {
     const due = await this.store.due(now)
@@ -170,7 +219,13 @@ export class JobQueue {
     return due.length
   }
 
-  /** Start polling: run {@link JobQueue.process} every `intervalMs` (default 1000). */
+  /**
+   * Start background polling: run {@link JobQueue.process} on a fixed interval.
+   * Idempotent — a second call while already polling is a no-op; call
+   * {@link JobQueue.stop} before `start` to change the interval.
+   *
+   * @param intervalMs - How often to poll for due jobs, in milliseconds (default 1000).
+   */
   start(intervalMs = 1000): void {
     if (this.timer) return
     this.timer = setInterval(() => {
@@ -186,12 +241,20 @@ export class JobQueue {
     }
   }
 
-  /** Jobs that exhausted their attempts (the dead-letter list). */
+  /**
+   * Jobs that exhausted their attempts (the dead-letter list).
+   *
+   * @returns The dead-lettered jobs.
+   */
   failed(): Promise<Job[]> {
     return this.store.failed()
   }
 
-  /** Number of jobs still pending. */
+  /**
+   * Number of jobs still pending.
+   *
+   * @returns The number of jobs still awaiting processing.
+   */
   pending(): Promise<number> {
     return this.store.pending()
   }

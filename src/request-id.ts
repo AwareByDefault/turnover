@@ -5,7 +5,9 @@ import { setRequestId } from './request'
 /** Options for the {@link requestId} plugin. */
 export interface RequestIdOptions {
   /**
-   * Header carrying the id on the request and echoed on the response.
+   * Header carrying the id on the request and echoed on the response. Matched
+   * case-insensitively; an inbound value is reused verbatim (never validated or
+   * sanitized), so treat it as untrusted where the id reaches logs or storage.
    * Default `x-request-id`.
    */
   header?: string
@@ -23,6 +25,9 @@ export interface RequestIdOptions {
  * const app = await createApp({ plugins: [requestId()] })
  * // every response carries `x-request-id`; getRequestId() reads it anywhere
  * ```
+ *
+ * @param options - Header name and id generator overrides.
+ * @returns A plugin that assigns and echoes a per-request correlation id.
  */
 export function requestId(options: RequestIdOptions = {}): Plugin {
   const header = options.header ?? 'x-request-id'

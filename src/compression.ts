@@ -3,9 +3,12 @@ import type { Interceptor } from './http'
 
 /** Options for {@link compression}. */
 export interface CompressionOptions {
-  /** Minimum response size (bytes) to compress. Default 1024. */
+  /** Minimum response size, in bytes, worth compressing; smaller bodies pass through untouched. Default 1024. */
   threshold?: number
-  /** Extra content-type substrings to treat as compressible. */
+  /**
+   * Extra `Content-Type` substrings to treat as compressible (matched with
+   * `includes`), on top of the built-in `text/*`, JSON, JavaScript, and XML types.
+   */
   types?: string[]
 }
 
@@ -27,6 +30,10 @@ function isCompressible(contentType: string, extra?: string[]): boolean {
  * ```ts
  * const app = await createApp({ plugins: [compression()] })
  * ```
+ *
+ * @param options - tune the size `threshold` and add compressible content
+ *   `types`; defaults compress text/JSON/JavaScript/XML bodies of at least 1 KB
+ * @returns a plugin whose interceptor gzips eligible responses
  */
 export function compression(options: CompressionOptions = {}): Plugin {
   const threshold = options.threshold ?? 1024

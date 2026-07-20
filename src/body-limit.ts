@@ -9,6 +9,10 @@ import type { Plugin, RequestHook } from './app'
  * ```ts
  * const app = await createApp({ plugins: [bodyLimit(1_000_000)] }) // 1 MB
  * ```
+ *
+ * @param maxBytes - size ceiling in bytes; a request is rejected only when its
+ *   `Content-Length` is strictly greater, so a body of exactly `maxBytes` passes
+ * @returns a plugin whose request hook rejects oversized requests with `413`
  */
 export function bodyLimit(maxBytes: number): Plugin {
   const onRequest: RequestHook = (req) => {
