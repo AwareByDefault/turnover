@@ -6,7 +6,11 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>
 
-/** How the client authenticates to the token endpoint. */
+/**
+ * How the client sends its secret to the token endpoint: `body` puts
+ * `client_secret` in the form body, `basic` sends it as an HTTP Basic
+ * `Authorization` header (`client_secret_basic`).
+ */
 export type ClientAuthMethod = 'body' | 'basic'
 
 /** Configuration for an {@link OAuth2Client}. */
@@ -15,15 +19,15 @@ export interface OAuth2Config {
   clientId: string
   /** Required for confidential clients; omit for public (PKCE-only) clients. */
   clientSecret?: string
-  /** The provider's authorization endpoint. */
+  /** Full URL of the provider's authorization endpoint; the base of the login URL built by {@link OAuth2Client.createAuthorizationUrl}. */
   authorizationEndpoint: string
-  /** The provider's token endpoint. */
+  /** Full URL of the provider's token endpoint; `POST`ed server-to-server for code exchange and refresh. */
   tokenEndpoint: string
-  /** Where the provider redirects back with the code. */
+  /** Callback URL the provider redirects back to with the code; must exactly match one registered with the provider, and is re-sent on {@link OAuth2Client.exchangeCode}. */
   redirectUri: string
-  /** Default scopes for {@link OAuth2Client.createAuthorizationUrl}. */
+  /** Default scopes requested by {@link OAuth2Client.createAuthorizationUrl} (overridable per call); include `openid` to receive an {@link TokenResponse.idToken}. */
   scopes?: string[]
-  /** How to send the client secret (default `"body"`). */
+  /** How to send {@link OAuth2Config.clientSecret} (default `"body"`); irrelevant for public clients that have no secret. */
   clientAuth?: ClientAuthMethod
   /** Injected `fetch` (default the global). */
   fetch?: FetchLike
@@ -39,7 +43,7 @@ export interface AuthorizationRequest {
   codeVerifier: string
 }
 
-/** A normalized token endpoint response. */
+/** A token endpoint response, normalized from the provider's snake_case JSON into camelCase (the untouched original stays in {@link TokenResponse.raw}). */
 export interface TokenResponse {
   /** The access token to call APIs with. */
   accessToken: string
@@ -51,7 +55,7 @@ export interface TokenResponse {
   refreshToken?: string
   /** OIDC ID token (a JWT), if the `openid` scope was granted. */
   idToken?: string
-  /** The scopes actually granted, space-delimited, if returned. */
+  /** Scopes actually granted, space-delimited; may be narrower than requested, so check it before assuming access. */
   scope?: string
   /** The raw JSON, for provider-specific fields. */
   raw: Record<string, unknown>
@@ -126,7 +130,7 @@ export class OAuth2Client {
   /**
    * Build an authorization URL with a fresh `state` and PKCE challenge.
    *
-   * @param options - Overrides: `scopes`, a fixed `state`/`codeVerifier`, and extra query `params`.
+   * @param options - overrides the config `scopes`, or pins `state`/`codeVerifier` (both default to fresh 256-bit random tokens — pin only for tests); `params` adds extra query parameters such as `prompt` or `login_hint`.
    */
   createAuthorizationUrl(
     options: {
@@ -158,8 +162,9 @@ export class OAuth2Client {
 
   /**
    * Exchange an authorization `code` (plus its PKCE verifier) for tokens.
+   * Throws {@link OAuth2Error} if the endpoint replies non-2xx.
    *
-   * @param options - The `code` from the callback, its `codeVerifier`, and an optional `redirectUri` override.
+   * @param options - the authorization `code` from the callback, the `codeVerifier` you persisted alongside its `state` (required to satisfy PKCE), and a `redirectUri` override that must match the one originally sent.
    */
   exchangeCode(options: {
     code: string
@@ -179,8 +184,8 @@ export class OAuth2Client {
   /**
    * Exchange a refresh token for a fresh access token.
    *
-   * @param refreshToken - The refresh token previously issued by the provider.
-   * @returns The refreshed token set.
+   * @param refreshToken - a refresh token from a prior {@link TokenResponse}; some providers rotate it and return a new one, so persist the response's `refreshToken` if present.
+   * @returns The refreshed token set (throws {@link OAuth2Error} on a non-2xx response).
    */
   refreshToken(refreshToken: string): Promise<TokenResponse> {
     const body = new URLSearchParams({
@@ -194,10 +199,10 @@ export class OAuth2Client {
   /**
    * Fetch the OIDC userinfo profile with an access token.
    *
-   * @typeParam T - The expected shape of the userinfo response.
-   * @param accessToken - A valid access token, sent as a Bearer credential.
-   * @param userInfoEndpoint - The provider's userinfo endpoint URL.
-   * @returns The parsed userinfo profile.
+   * @typeParam T - the expected shape of the userinfo JSON; unchecked, so validate it if the source is untrusted.
+   * @param accessToken - a valid access token, sent as a `Bearer` credential in the `Authorization` header.
+   * @param userInfoEndpoint - the provider's userinfo endpoint (kept out of {@link OAuth2Config} since it is per-provider; read it from the OIDC discovery document).
+   * @returns The parsed userinfo profile; throws {@link OAuth2Error} on a non-2xx response.
    */
   async fetchUserInfo<T = Record<string, unknown>>(
     accessToken: string,

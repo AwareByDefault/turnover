@@ -16,7 +16,7 @@ export interface Handleable {
 export interface TestRequestOptions {
   /** Extra headers for this request (merged over the client defaults). */
   headers?: Record<string, string>
-  /** Query parameters appended to the path. */
+  /** Query parameters appended to the path; each value is coerced to a string via `String(value)`. */
   query?: Record<string, string | number | boolean>
 }
 
@@ -33,7 +33,7 @@ export interface TestResponse {
   readonly raw: Response
   /**
    * Read and parse the body as JSON (clones, so it can be called repeatedly).
-   * @typeParam T - The expected shape of the parsed JSON body.
+   * @typeParam T - the asserted shape of the parsed body; cast only, never validated at runtime.
    * @returns The parsed body.
    */
   json<T = unknown>(): Promise<T>
@@ -48,9 +48,9 @@ export interface TestResponse {
 export interface TestClient {
   /**
    * Send a request with an explicit method — the general form behind the verb helpers.
-   * @param method - The HTTP method to use.
+   * @param method - HTTP method; a body is attached only when this is not exactly `"GET"` or `"HEAD"`.
    * @param path - The request path, relative to the client's base URL.
-   * @param options - Headers, query parameters, and an optional body.
+   * @param options - headers, query parameters, and an optional `body` (JSON-serialized unless already a raw body).
    */
   request(
     method: string,

@@ -28,19 +28,30 @@ export interface CacheStore {
    */
   set(key: string, value: unknown, ttlMs?: number): Promise<void>
   /**
-   * Remove the entry stored under `key`.
+   * Remove the entry stored under `key`. Idempotent — a no-op if the key is
+   * absent or already expired.
    *
    * @param key - The cache key to remove.
    */
   delete(key: string): Promise<void>
-  /** Remove every entry. */
+  /**
+   * Remove **every** entry in the store, regardless of key prefix. This is the
+   * store-wide sweep {@link cacheEvict} triggers, so with a shared store it also
+   * drops cache entries written by other classes.
+   */
   clear(): Promise<void>
 }
 
 /** Bind a cache backend here; defaults to an in-memory store. */
 export const CACHE_STORE = new InjectionToken<CacheStore>('CacheStore')
 
-/** The default in-memory cache (per-entry TTL). */
+/**
+ * The default {@link CacheStore}: a process-local `Map` with per-entry TTL.
+ * Expiry is lazy — an entry is purged only when next read via {@link get}, so an
+ * unread expired entry keeps its memory until then, and the map is unbounded (no
+ * max size or LRU). Not shared across replicas; back `@cacheable` with a shared
+ * store such as `redisCacheStore` for that.
+ */
 export class MemoryCache implements CacheStore {
   private readonly store = new Map<
     string,
@@ -49,6 +60,7 @@ export class MemoryCache implements CacheStore {
 
   /**
    * Return the value stored under `key`, or `undefined` if absent or expired.
+   * Reading an expired entry also evicts it as a side effect (lazy expiry).
    *
    * @param key - The cache key to look up.
    * @returns The stored value, or `undefined` if absent or expired.
@@ -97,7 +109,7 @@ export interface CacheableOptions {
   key?: string
   /** Time-to-live in milliseconds (default: no expiry). */
   ttl?: number
-  /** Derive the key suffix from the arguments (default: JSON of the args). */
+  /** Derive the key suffix from the call arguments; the returned string must uniquely identify the args, or distinct calls collide on one entry (default: `JSON.stringify(args)`). */
   keyBy?: (...args: any[]) => string
 }
 
@@ -117,6 +129,12 @@ function cacheKey(opts: CacheableMeta, args: unknown[]): string {
  * method always returns a `Promise` — `await` it even when the underlying body
  * is synchronous.
  *
+ * @remarks
+ * The entry key is the `key` option (or the method name) joined by `:` to
+ * `keyBy(...args)` (or `JSON.stringify(args)` by default). A resolved value of
+ * `undefined` is never cached — it reads back as a miss, so such calls re-run
+ * every time.
+ *
  * @param options - Key prefix, TTL, and key-derivation overrides for the cache entry.
  * @returns A method decorator that memoizes the method via the bound `CacheStore`.
  */
@@ -132,10 +150,13 @@ export function cacheable(options: CacheableOptions = {}) {
 }
 
 /**
- * Method decorator: clear the cache when this method is called.
+ * Method decorator: clear the **entire** bound `CacheStore` — every entry, not
+ * just this method's — *before* the wrapped method body runs. Because eviction
+ * happens first, a throwing method still empties the cache. Use with a shared
+ * store carefully: it also drops other classes' `@cacheable` entries.
  *
- * @param _value - The decorated method (unused).
- * @param context - The standard method-decorator context, used to record the evict marker.
+ * @param _value - The decorated method (unused; standard-decorator plumbing).
+ * @param context - Method-decorator context; its `name` records the evict marker.
  */
 export function cacheEvict(
   _value: unknown,

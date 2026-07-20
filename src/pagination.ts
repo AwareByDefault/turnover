@@ -1,8 +1,8 @@
 /** Normalized pagination parameters read from a query string. */
 export interface PageParams {
-  /** 1-based page number. */
+  /** 1-based page number; clamped to `>= 1`. */
   page: number
-  /** Items per page. */
+  /** Items per page; clamped to `[1, maxLimit]`. */
   limit: number
   /** Zero-based offset (`(page - 1) * limit`), for slicing or SQL `OFFSET`. */
   offset: number

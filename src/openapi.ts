@@ -2,23 +2,23 @@ import type { RouteSchemas, StandardSchemaV1 } from './schema'
 
 /** OpenAPI metadata a route can declare (via its decorator options). */
 export interface OperationMeta {
-  /** Short summary of the operation. */
+  /** One-line summary shown as the operation's title in docs UIs. */
   summary?: string
-  /** Longer description of the operation. */
+  /** Longer description; CommonMark/Markdown is rendered by docs UIs. */
   description?: string
-  /** Tags used to group the operation. */
+  /** Tags that group the operation into sidebar sections in docs UIs. */
   tags?: string[]
-  /** Explicit operation id (a readable one is generated when omitted). */
+  /** Explicit operation id; must be unique across the document and is reused as the generated client's method name. Falls back to a readable id derived from method + path (e.g. `getUsersId`) when omitted. */
   operationId?: string
-  /** Mark the operation as deprecated. */
+  /** Flag the operation deprecated (docs UIs render it struck-through). */
   deprecated?: boolean
 }
 
 /** One mounted route, captured for OpenAPI generation. */
 export interface OperationRecord {
-  /** The HTTP method (e.g. `GET`). */
+  /** The HTTP method in uppercase (e.g. `GET`); lowercased when written as the path-item key. */
   method: string
-  /** The normalized route pattern, e.g. `/users/:id`. */
+  /** The normalized route pattern with `:name` params (e.g. `/users/:id`), converted to `/users/{id}` in the output. */
   pattern: string
   /** Standard Schemas declared for the route's inputs and output. */
   schemas?: RouteSchemas
@@ -67,9 +67,9 @@ export interface OpenApiOptions {
 
 /** A generated OpenAPI 3.1 document. */
 export interface OpenApiDocument {
-  /** The OpenAPI spec version (`3.1.0`). */
+  /** The OpenAPI spec version — always the literal `"3.1.0"`. */
   openapi: string
-  /** Document metadata. */
+  /** Document metadata with defaults resolved, so `title` and `version` are always present (unlike the all-optional {@link OpenApiInfo}). */
   info: { title: string; version: string; description?: string }
   /** Advertised servers, if any. */
   servers?: OpenApiServer[]
@@ -114,6 +114,15 @@ function defaultOperationId(method: string, path: string): string {
 
 /**
  * Build an OpenAPI 3.1 document from mounted operations.
+ *
+ * @remarks
+ * Path params are always emitted as `required` (typed from the route's `params`
+ * schema, or `{ type: 'string' }` when it has none). A request body is marked
+ * `required`. Every operation gets a single `200` response — carrying the
+ * `response` schema when one is declared, otherwise just `{ description: 'OK' }`.
+ * Input/output schemas appear only when `options.toJsonSchema` is supplied;
+ * without it the document still has all paths, params, and metadata but no
+ * request/response schemas.
  *
  * @param operations - the mounted route records to document
  * @param options - document info, servers, and a Standard-Schema-to-JSON-Schema converter

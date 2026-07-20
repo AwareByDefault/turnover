@@ -148,7 +148,7 @@ export class Container {
    *
    * @typeParam T - the type the token resolves to.
    * @param token - the token to resolve.
-   * @returns the resolved instance.
+   * @returns the instance from the winning (last-registered) provider, or a freshly constructed one for an unbound class token; throws for an unbound {@link InjectionToken}.
    */
   resolve<T>(token: Token<T>): T {
     const bindings = this.providers.get(token)
@@ -184,7 +184,7 @@ export class Container {
    *
    * @typeParam T - the type the token resolves to.
    * @param token - the token to resolve.
-   * @param fallback - value returned when an unbound InjectionToken is resolved.
+   * @param fallback - returned only when an unbound {@link InjectionToken} is resolved; a class token is still constructed, so the fallback never applies to it.
    * @returns the resolved instance, or `fallback`.
    */
   resolveOptional<T>(token: Token<T>, fallback: T): T {
@@ -399,7 +399,7 @@ export function injectAll<T>(token: Token<T>): T[] {
  *
  * @typeParam T - the type the token resolves to.
  * @param token - the dependency to resolve.
- * @param fallback - value returned when an unbound InjectionToken is resolved.
+ * @param fallback - returned only when an unbound {@link InjectionToken} is resolved; a class token is still constructed, so the fallback never applies to it.
  * @returns the resolved instance, or `fallback`.
  */
 export function injectOptional<T>(token: Token<T>, fallback: T): T {

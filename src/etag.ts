@@ -3,7 +3,7 @@ import type { Interceptor } from './http'
 
 /** Options for the {@link etag} plugin. */
 export interface EtagOptions {
-  /** Request methods that receive an ETag. Default `["GET"]`. */
+  /** Request methods that receive an ETag (compared case-insensitively). Default `["GET"]`. */
   methods?: string[]
 }
 

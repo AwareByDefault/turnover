@@ -3,13 +3,13 @@ import type { Plugin, RequestHook } from './app'
 
 /** Options for {@link serveStatic}. */
 export interface StaticOptions {
-  /** Directory whose files are served. */
+  /** Directory whose files are served, resolved to an absolute path from the process's working directory. */
   dir: string
   /** URL prefix to mount under (default `"/"`). Stripped before file lookup. */
   prefix?: string
   /** File served for a directory request (default `"index.html"`; `""` disables). */
   index?: string
-  /** `Cache-Control` header applied to every served file. */
+  /** `Cache-Control` header value set on every served file; omit to send none. */
   cacheControl?: string
 }
 

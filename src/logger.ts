@@ -15,7 +15,7 @@ const LEVELS: Record<LogLevel, number> = {
 export interface LogRecord {
   /** Severity of the record. */
   level: LogLevel
-  /** The log message. */
+  /** Human-readable event message; keep it stable and put variable data in the free-form fields below. */
   msg: string
   /** ISO-8601 timestamp of when the record was emitted. */
   time: string
@@ -25,7 +25,7 @@ export interface LogRecord {
   [key: string]: unknown
 }
 
-/** Where log records go. */
+/** Consumes each emitted record (already past the level filter); called synchronously, once per record. */
 export type LogSink = (record: LogRecord) => void
 
 /** Override where log records go (default: JSON to stdout, warn/error to stderr). */
@@ -85,37 +85,37 @@ export class Logger {
   }
 
   /**
-   * Log at `debug` (suppressed unless the level allows it).
+   * Log at `debug` — the lowest level, dropped unless the minimum is `debug`.
    *
-   * @param msg - The log message.
-   * @param fields - Optional structured fields merged into the record.
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins.
    */
   debug(msg: string, fields?: Record<string, unknown>): void {
     this.write('debug', msg, fields)
   }
   /**
-   * Log at `info`.
+   * Log at `info` — the default minimum level; goes to stdout via the default sink.
    *
-   * @param msg - The log message.
-   * @param fields - Optional structured fields merged into the record.
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins.
    */
   info(msg: string, fields?: Record<string, unknown>): void {
     this.write('info', msg, fields)
   }
   /**
-   * Log at `warn`.
+   * Log at `warn` — routed to stderr (not stdout) by the default sink.
    *
-   * @param msg - The log message.
-   * @param fields - Optional structured fields merged into the record.
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins.
    */
   warn(msg: string, fields?: Record<string, unknown>): void {
     this.write('warn', msg, fields)
   }
   /**
-   * Log at `error`.
+   * Log at `error` — the highest level; routed to stderr by the default sink.
    *
-   * @param msg - The log message.
-   * @param fields - Optional structured fields merged into the record.
+   * @param msg - Event message; becomes the record's `msg` field.
+   * @param fields - Structured fields; merged last, so keys `level`/`msg`/`time`/`requestId` here override the built-ins. Pass a caught error under a field (e.g. `{ err }`) rather than as `msg`.
    */
   error(msg: string, fields?: Record<string, unknown>): void {
     this.write('error', msg, fields)

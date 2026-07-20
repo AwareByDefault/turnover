@@ -34,7 +34,7 @@ export type HttpMethod =
  * the router.
  */
 export interface RouteMeta {
-  /** The HTTP verb the route responds to. */
+  /** The HTTP verb the route answers, fixed by the verb decorator that recorded it (`@get`→`GET`, `@post`→`POST`, …). */
   method: HttpMethod
   /** The route path, relative to the controller's base path. */
   path: string

@@ -32,7 +32,7 @@ const headerGetter: TextMapGetter<Headers> = {
 export interface OtelOptions {
   /** Tracer name (default `"turnover"`) passed to `trace.getTracer`. */
   tracerName?: string
-  /** Tracer version passed to `trace.getTracer`. */
+  /** Tracer version passed to `trace.getTracer`; surfaces in the instrumentation scope of emitted spans. */
   tracerVersion?: string
   /** Return `true` to skip tracing a request (e.g. health checks). */
   ignore?: (ctx: HttpContext) => boolean

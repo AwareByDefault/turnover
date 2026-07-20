@@ -4,7 +4,7 @@ import { type CookieOptions, Cookies } from './cookies'
 import { injectable } from './di'
 import type { Interceptor } from './http'
 
-/** Data bag persisted for one session. */
+/** Data bag persisted for one session; values must be JSON-serializable once a non-memory {@link SessionStore} (e.g. Redis) round-trips them. */
 export type SessionData = Record<string, unknown>
 
 /**
@@ -20,14 +20,17 @@ export interface SessionStore {
    */
   get(id: string): Promise<SessionData | undefined>
   /**
-   * Persist a session's data.
+   * Persist a session's data. The {@link session} plugin calls this at request
+   * end only when the session is dirty, so a TTL-based store should refresh the
+   * entry's expiry here (lifetime slides on write, not on read).
    *
    * @param id - The session id to store under.
-   * @param data - The session data bag to persist.
+   * @param data - The full data bag to persist, replacing any prior value for `id`.
    */
   set(id: string, data: SessionData): Promise<void>
   /**
-   * Remove a session.
+   * Remove a session. Called on {@link Session.destroy} (logout) and, after
+   * {@link Session.regenerate}, on the superseded old id. Should be idempotent.
    *
    * @param id - The session id to remove.
    */
@@ -35,11 +38,13 @@ export interface SessionStore {
 }
 
 /**
- * In-memory {@link SessionStore} backed by a `Map`, with an optional sliding
- * lifetime. Fine for a single process or tests; use a shared store (Redis, a
- * database) across replicas.
+ * In-memory {@link SessionStore} backed by a `Map`. Fine for a single process or
+ * tests; use a shared store (Redis, a database) across replicas.
  *
- * @param options - Store settings; `ttl` sets a sliding lifetime in seconds.
+ * @param options - `ttl` is the lifetime in **seconds** (stored internally as
+ *   ms); it is refreshed on every write, so idle read-only requests do not
+ *   extend it. Omit `ttl` for sessions that never expire. Expired entries are
+ *   purged lazily on the next {@link SessionStore.get}, not on a timer.
  */
 export function memorySessionStore(
   options: { ttl?: number } = {},
@@ -128,9 +133,10 @@ export class Session {
   }
 
   /**
-   * A stored value.
+   * Read a stored value by key. `T` is an **unchecked cast** — the value is not
+   * validated at runtime — so narrow or validate untrusted session data yourself.
    *
-   * @typeParam T - The expected type of the stored value.
+   * @typeParam T - Asserted type of the stored value (cast, not verified).
    * @param key - The key to read from the session data.
    * @returns The stored value, or `undefined` if the key is unset.
    */
@@ -139,7 +145,9 @@ export class Session {
   }
 
   /**
-   * Store a value, minting a session id on first write.
+   * Store a value. The first write mints a session id and flags the session
+   * dirty, so the {@link session} plugin persists it and sends the cookie at
+   * request end; it also cancels a {@link destroy} made earlier in the request.
    *
    * @param key - The key to store the value under.
    * @param value - The value to store.
@@ -153,7 +161,9 @@ export class Session {
   }
 
   /**
-   * Remove a single value.
+   * Remove a single value and flag the session dirty. Removes only this key, not
+   * the session; unlike {@link set} it never mints an id, so deleting on a
+   * session that was never written persists nothing.
    *
    * @param key - The key to remove from the session data.
    */

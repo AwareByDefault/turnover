@@ -12,10 +12,12 @@ import type { BunPlugin } from 'bun'
 const CONTROLLER = /@controller\s*\(/
 
 /**
- * Absolute paths of every `.ts` file under `dir` whose source declares a `@controller`.
+ * Absolute paths of every `.ts` file under `dir` whose source declares a
+ * `@controller`. Detection is a text match for `@controller(` (not real
+ * parsing), so an occurrence inside a comment or string would also match.
  *
- * @param dir - directory to scan recursively for controller files
- * @returns the matching absolute file paths, sorted
+ * @param dir - directory scanned recursively (`.ts` files only)
+ * @returns the matching absolute paths, sorted lexicographically
  */
 export async function scanControllerFiles(dir: string): Promise<string[]> {
   const glob = new Bun.Glob('**/*.ts')

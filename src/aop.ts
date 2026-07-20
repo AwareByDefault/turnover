@@ -13,7 +13,7 @@ export interface JoinPoint {
   readonly target: object
   /** The method name. */
   readonly method: string
-  /** The call arguments. */
+  /** The arguments the call was invoked with; read-only (replace them via `proceed(args)` in around advice). */
   readonly args: readonly unknown[]
 }
 
@@ -65,7 +65,7 @@ function adviceFor(context: ClassMethodDecoratorContext): AdviceSet {
  *
  * @param meta - The class's shared metadata bag to record the advice on.
  * @param method - Name of the method to wrap.
- * @param advice - The around advice to run around the method.
+ * @param advice - wrapping advice run around each call to `method`; it must call `proceed()` to invoke the method and returns the (possibly transformed) result. Stacks with other advice on the same method. See {@link AroundAdvice}.
  */
 export function addAround(
   meta: MetaBag,
@@ -78,7 +78,7 @@ export function addAround(
 /**
  * Method decorator: run `advice` before the method (sync side effects).
  *
- * @param advice - The advice to run before the method body.
+ * @param advice - receives the call's {@link JoinPoint}; its return value is ignored — use for logging, validation, or arg inspection.
  * @returns A method decorator that records the before advice.
  */
 export function before(advice: BeforeAdvice) {
@@ -90,7 +90,7 @@ export function before(advice: BeforeAdvice) {
 /**
  * Method decorator: run `advice` after the method (finally; awaits async methods).
  *
- * @param advice - The advice to run after the method finishes.
+ * @param advice - receives the call's {@link JoinPoint}; runs in a `finally` (awaiting async results) so it fires even when the method throws; its return value is ignored.
  * @returns A method decorator that records the after advice.
  */
 export function after(advice: AfterAdvice) {
@@ -102,7 +102,7 @@ export function after(advice: AfterAdvice) {
 /**
  * Method decorator: wrap the method — call `joinPoint.proceed()` to run it.
  *
- * @param advice - The advice that wraps the method.
+ * @param advice - receives a {@link ProceedingJoinPoint}; must call `proceed()` to run the method, and its return value becomes the call's result.
  * @returns A method decorator that records the around advice.
  */
 export function around(advice: AroundAdvice) {

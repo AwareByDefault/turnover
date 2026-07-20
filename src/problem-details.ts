@@ -6,9 +6,9 @@ import type { ErrorHandler } from './http'
 export interface ProblemDocument {
   /** A URI identifying the problem type. `about:blank` when unspecified. */
   type: string
-  /** A short, human-readable summary of the problem type. */
+  /** A short, human-readable summary of the problem type; the plugin fills it from the status's reason phrase (e.g. `"Not Found"`). */
   title: string
-  /** The HTTP status code. */
+  /** The HTTP status code; must equal the `Response`'s own status. */
   status: number
   /** A human-readable explanation specific to this occurrence. */
   detail?: string

@@ -29,7 +29,11 @@ import type { RouteSchemas } from './schema'
 export interface Context<
   Params extends Record<string, string> = Record<string, string>,
 > {
-  /** The incoming Web `Request`. */
+  /**
+   * The raw incoming Web `Request`. Read the body through {@link Context.body}
+   * (cached and parser-aware) rather than `req.json()`/`req.text()` directly, and
+   * prefer {@link Context.route} over `req.url` for low-cardinality labels.
+   */
   readonly req: Request
   /**
    * The matched route pattern (e.g. `/users/:id`) — low-cardinality, unlike
@@ -37,12 +41,23 @@ export interface Context<
    * logging. `""` for a 404 (no route matched).
    */
   readonly route: string
-  /** Path params captured from the route pattern (e.g. `/:id`). */
+  /**
+   * Path params captured from the route pattern (e.g. `:id`), already
+   * URL-decoded. An empty object when the pattern has no `:param` segments.
+   */
   readonly params: Params
-  /** Parsed query string. */
+  /**
+   * The request's query string as `URLSearchParams` — raw and uncoerced; use
+   * `getAll` for repeated keys. A declared `query` schema validates a flattened
+   * object form (repeated keys become arrays) into {@link ValidatedInputs.query}
+   * instead.
+   */
   readonly query: URLSearchParams
   /**
-   * Lazily read + parse the raw body (JSON when the content-type says so).
+   * Lazily read and parse the request body through the registered
+   * {@link BodyParser}s — JSON when the content-type says so, an empty body as
+   * `undefined`, otherwise the raw text. This is the *raw* parsed value;
+   * schema-validated input lives on {@link Context.valid}.
    *
    * @typeParam T - The expected parsed-body type you assert (it is not validated).
    * @returns A promise of the parsed body, cached so repeated calls read it once.
@@ -59,7 +74,12 @@ export interface Context<
   readonly set: ResponseState
   /** Read incoming cookies and queue `Set-Cookie`s on the response. */
   readonly cookies: Cookies
-  /** Per-request values populated by `@derive` handlers (augment `RequestStore`). */
+  /**
+   * Per-request scratch space, populated by `@derive` handlers (before guards)
+   * and `@resolve` handlers (after validation). Augment `RequestStore` to type
+   * your own fields; the same object is reachable off the request via
+   * `getRequestStore()`.
+   */
   readonly store: RequestStore
 }
 

@@ -10,7 +10,7 @@ import type { OpenApiDocument } from './openapi'
 
 /** Options for {@link generateClient}. */
 export interface GenerateClientOptions {
-  /** Name of the generated factory function (default `"createClient"`). */
+  /** Name of the generated factory function (default `"createClient"`); emitted as `export function <name>`, so it must be a valid JS identifier. */
   clientName?: string
 }
 

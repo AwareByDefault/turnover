@@ -29,6 +29,11 @@ describe('pure helpers', () => {
       'Record<string, X>',
       'y',
     ])
+    // The `>` of an arrow `=>` must not be treated as a closing generic.
+    expect(splitTopLevel('a: (x: X) => Y, b: Z')).toEqual([
+      'a: (x: X) => Y',
+      'b: Z',
+    ])
     expect(splitTopLevel('')).toEqual([])
   })
 
@@ -53,6 +58,11 @@ describe('pure helpers', () => {
       returnType: 'Promise<T>',
     })
     expect(parseSignature('name: string').returnType).toBe('string')
+    // A callback param before another param must not swallow it (arrow `=>` fix).
+    expect(
+      parseSignature('sse(source: (c: C) => void, options?: O): Response')
+        .params,
+    ).toEqual(['source', 'options'])
   })
 
   test('parseJsDoc extracts summary and tags', () => {

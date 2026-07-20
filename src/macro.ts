@@ -34,7 +34,8 @@ const registry = new Map<string, MacroFactory>()
 
 /**
  * Register a named, parameterized bundle of cross-cutting hooks. Apply it to a
- * controller or route with `@macro(name, ...args)`.
+ * controller or route with `@macro(name, ...args)`. Registration is
+ * process-global; re-registering the same `name` replaces the previous factory.
  *
  * ```ts
  * defineMacro("role", (required: string) => {
@@ -45,7 +46,9 @@ const registry = new Map<string, MacroFactory>()
  * ```
  *
  * @param name - The name the macro is applied by via `@macro(name, ...)`.
- * @param factory - Builds the macro's hooks from its arguments at mount time.
+ * @param factory - runs once per application at mount time, inside an injection
+ * context (may `inject()` and close over services), turning the `@macro` args
+ * into the hooks to attach.
  */
 export function defineMacro(name: string, factory: MacroFactory): void {
   registry.set(name, factory)
@@ -54,8 +57,10 @@ export function defineMacro(name: string, factory: MacroFactory): void {
 /**
  * Apply a registered macro (by name, with args) to a controller or route.
  *
- * @param name - The name of the registered macro to apply.
- * @param args - Arguments passed through to the macro's factory.
+ * @param name - a macro registered with {@link defineMacro}; resolved at mount
+ * (by {@link expandMacros}), so it need only be registered before the app
+ * mounts — not before this decorator runs.
+ * @param args - forwarded verbatim to the macro's factory when it expands.
  * @returns A class/method decorator that records the macro application.
  */
 export function macro(name: string, ...args: unknown[]) {
@@ -86,7 +91,9 @@ export function macro(name: string, ...args: unknown[]) {
  * so factories can `inject()`. Throws if a macro name is not registered.
  *
  * @param applications - The macro applications to expand, in order.
- * @returns The merged hooks (`use`, `derive`, `intercept`, `catchError`).
+ * @returns hooks from every application concatenated in application order; all
+ * four arrays (`use`, `derive`, `intercept`, `catchError`) are always present,
+ * possibly empty.
  */
 export function expandMacros(
   applications: readonly MacroApplication[],

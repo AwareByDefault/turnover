@@ -102,7 +102,7 @@ export class Totp {
   /**
    * A fresh random base32 secret (default 20 bytes / 160 bits).
    *
-   * @param bytes - Number of random bytes of entropy (default 20).
+   * @param bytes - number of random bytes of entropy (default 20 = 160 bits, the RFC 4226 recommendation; raise, e.g. to 32, for a stronger secret).
    * @returns The secret, base32-encoded for authenticator apps.
    */
   generateSecret(bytes = 20): string {
@@ -130,9 +130,13 @@ export class Totp {
    * Whether `token` is valid for `secret`, tolerating clock skew of `±window`
    * time steps (default 1, i.e. the adjacent codes). Constant-time comparison.
    *
+   * @remarks Each extra `window` step also widens replay exposure: a captured
+   * code stays acceptable for `(2·window + 1) · period` seconds. There is no
+   * built-in single-use tracking — record and reject codes you have already
+   * accepted if replay within that window matters.
    * @param secret - The user's base32-encoded shared secret.
-   * @param token - The code the user submitted.
-   * @param options - `window` (± steps of skew, default 1) and `at` (time to check against).
+   * @param token - the code the user submitted; trimmed before comparison.
+   * @param options - `window` is the ± number of `period` steps of clock skew to accept (default 1 = previous, current, and next code); `at` overrides the reference time (default now).
    */
   verify(
     secret: string,
@@ -159,9 +163,13 @@ export class Totp {
   }
 
   /**
-   * An `otpauth://` provisioning URI to render as a QR code for enrolment.
+   * An `otpauth://totp/...` provisioning URI to render as a QR code for
+   * enrolment. This instance's `algorithm`, `digits`, and `period` are embedded
+   * so a compliant app configures itself to match {@link Totp.verify}.
    *
-   * @param options - The `secret`, `issuer` (app name), and `account` (user label) to encode.
+   * @remarks Some apps (notably Google Authenticator) ignore those parameters and
+   * assume SHA1 / 6 digits / 30s — keep the defaults for the widest compatibility.
+   * @param options - `secret` (this user's base32 secret), `issuer` (your app name, shown in the authenticator), and `account` (the user's label, e.g. their email); both text fields are URI-encoded.
    */
   uri(options: { secret: string; issuer: string; account: string }): string {
     const label = encodeURIComponent(`${options.issuer}:${options.account}`)

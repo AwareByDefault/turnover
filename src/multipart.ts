@@ -13,11 +13,11 @@ export class UploadedFile {
     private readonly file: File,
   ) {}
 
-  /** The client-supplied filename. */
+  /** The client-supplied filename — untrusted; sanitize before using it as a filesystem path. May be empty. */
   get filename(): string {
     return this.file.name
   }
-  /** The declared MIME type. */
+  /** The client-declared MIME type (the part's `Content-Type`), not sniffed from the bytes — treat it as a hint, not a guarantee. */
   get type(): string {
     return this.file.type
   }
@@ -31,15 +31,16 @@ export class UploadedFile {
   }
 
   /**
-   * Read the whole file as bytes.
+   * Read the entire file into memory as bytes. Buffers the whole upload — prefer
+   * {@link UploadedFile.blob} to stream large files instead.
    *
-   * @returns the file's contents as a `Uint8Array`
+   * @returns the full contents as a `Uint8Array`
    */
   async bytes(): Promise<Uint8Array> {
     return new Uint8Array(await this.file.arrayBuffer())
   }
   /**
-   * Read the whole file as text.
+   * Read the entire file into memory and decode it as UTF-8 text.
    *
    * @returns the file's contents decoded as a string
    */

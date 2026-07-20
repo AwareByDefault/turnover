@@ -36,7 +36,7 @@ export class EnvConfigSource implements ConfigSource {
   /**
    * Every defined environment variable as a `[key, value]` pair.
    *
-   * @returns an iterable of every defined environment variable as a `[key, value]` pair.
+   * @returns an iterable of `[name, value]` pairs; variables whose value is `undefined` are skipped, so every pair is a real string.
    */
   entries(): Iterable<readonly [string, string]> {
     const env = Bun.env as Record<string, string | undefined>
@@ -70,6 +70,13 @@ export class Config {
   /**
    * Read a value, coercing to the fallback's type (string/number/boolean).
    *
+   * @remarks
+   * Coercion is driven by the fallback's runtime type: a `number` fallback parses
+   * the raw string with `Number()` and falls back when the result is `NaN`; a
+   * `boolean` fallback is `true` only for the exact strings `'true'` or `'1'` (every
+   * other value, `'false'` included, yields `false`); a `string` (or absent) fallback
+   * returns the raw value unchanged. The source is read fresh on every call.
+   *
    * @param key - the configuration key to read.
    * @param fallback - value returned when the key is absent; its type drives coercion (string/number/boolean).
    * @returns the coerced value, or `fallback` (or `undefined` when no fallback is given).
@@ -98,7 +105,7 @@ export class Config {
    * Read a value, throwing if it is missing.
    *
    * @param key - the configuration key to read.
-   * @returns the raw string value.
+   * @returns the raw string value, never coerced.
    */
   require(key: string): string {
     const raw = this.source.get(key)
@@ -160,7 +167,7 @@ export function value(
  * Read a required config value in a field initializer (throws if missing).
  *
  * @param key - the configuration key to read.
- * @returns the raw string value.
+ * @returns the raw string value, never coerced.
  */
 export function requireValue(key: string): string {
   return inject(Config).require(key)

@@ -24,8 +24,9 @@ const NOOP_MANAGER: TransactionManager = { run: async (fn) => fn() }
 /**
  * Method decorator: run this method inside a transaction from the bound
  * `TransactionManager` (commit on success, roll back on error) — the result
- * becomes a `Promise`. With no manager bound there is no transaction to run, so
- * the method executes as-is (a synchronous method stays synchronous).
+ * becomes a `Promise`, so callers must await it. With no manager bound there is
+ * no transaction to run, so the method executes as-is (a synchronous method
+ * stays synchronous). `@repository` applies this to every method of a class.
  *
  * @param _value - The decorated method (unused; metadata is keyed by name).
  * @param context - The standard method-decorator context; its `name` marks the method.

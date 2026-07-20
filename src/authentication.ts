@@ -8,13 +8,14 @@ import { setPrincipal } from './request'
  * `null` to defer to the next scheme. Implement one for any credential type.
  */
 export interface AuthScheme {
-  /** A label for diagnostics. */
+  /** Human-readable label for your own logging; the framework never reads it to select a scheme. */
   name: string
   /**
    * Resolve a principal from the request, or `null` to defer to the next scheme.
    *
-   * @param ctx - The request context to authenticate.
-   * @returns The resolved principal, or `null` to defer to the next scheme.
+   * @param ctx - the request to inspect for credentials (headers, cookies, query).
+   * @returns the principal on success, or `null` to defer — there is no reject
+   * signal, so `null` from every scheme simply leaves the request anonymous.
    */
   authenticate(ctx: Context): Principal | null | Promise<Principal | null>
 }

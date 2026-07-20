@@ -1,9 +1,13 @@
-/** Lifecycle state of a queued job. */
+/**
+ * Lifecycle state of a queued job: `pending` until a handler succeeds
+ * (`completed`) or its attempts run out (`failed`). There is no separate
+ * "running" state.
+ */
 export type JobStatus = 'pending' | 'completed' | 'failed'
 
 /** A unit of deferred work. */
 export interface Job<T = unknown> {
-  /** Unique id assigned at enqueue time. */
+  /** Unique id assigned at enqueue time, of the form `type-seq-enqueueMillis`. */
   readonly id: string
   /** The registered handler type this job routes to. */
   readonly type: string
@@ -15,9 +19,9 @@ export interface Job<T = unknown> {
   readonly maxAttempts: number
   /** Epoch ms the job is eligible to run at (for delays and backoff). */
   runAt: number
-  /** Current lifecycle state. */
+  /** Current lifecycle state; see {@link JobStatus}. */
   status: JobStatus
-  /** Message of the last handler error, if any. */
+  /** `message` of the error thrown by the most recent failed attempt (no stack); cleared once an attempt succeeds. */
   lastError?: string
 }
 
@@ -33,9 +37,9 @@ export type JobHandler<T = unknown> = (
  */
 export interface JobStore {
   /**
-   * Persist a newly enqueued job.
+   * Persist a newly enqueued job, keyed by its `id`.
    *
-   * @param job - The newly enqueued job to store.
+   * @param job - The newly enqueued job (status `pending`) to store.
    */
   add(job: Job): Promise<void>
   /**
@@ -46,9 +50,9 @@ export interface JobStore {
    */
   due(now: number): Promise<Job[]>
   /**
-   * Persist an updated job.
+   * Persist an updated job, replacing any prior record with the same `id`.
    *
-   * @param job - The job whose mutated state should be written back.
+   * @param job - The job whose mutated state (attempts, status, `runAt`) should be written back.
    */
   save(job: Job): Promise<void>
   /**
@@ -96,7 +100,7 @@ export interface JobQueueOptions {
   store?: JobStore
   /** Default attempt limit per job (default 3). */
   maxAttempts?: number
-  /** Retry delay (ms) before attempt N. Default exponential: `1000 * 2^(N-2)`. */
+  /** Delay in milliseconds before attempt N (the number of the upcoming try). Default exponential `1000 * 2^(N-2)`: 1s before attempt 2, 2s before 3, 4s before 4. */
   backoff?: (attempt: number) => number
   /** Clock source (default `Date.now`). Override for deterministic tests. */
   clock?: () => number
@@ -104,7 +108,7 @@ export interface JobQueueOptions {
 
 /** Options for a single {@link JobQueue.enqueue}. */
 export interface EnqueueOptions {
-  /** Delay before the job becomes eligible, in ms. */
+  /** Milliseconds to wait, measured from enqueue time, before the job becomes eligible to run (default 0 — eligible immediately). */
   delay?: number
   /** Override the queue's default attempt limit. */
   maxAttempts?: number
@@ -216,9 +220,11 @@ export class JobQueue {
   }
 
   /**
-   * Start polling: run {@link JobQueue.process} every `intervalMs` (default 1000).
+   * Start background polling: run {@link JobQueue.process} on a fixed interval.
+   * Idempotent — a second call while already polling is a no-op; call
+   * {@link JobQueue.stop} before `start` to change the interval.
    *
-   * @param intervalMs - How often to poll for due jobs, in milliseconds.
+   * @param intervalMs - How often to poll for due jobs, in milliseconds (default 1000).
    */
   start(intervalMs = 1000): void {
     if (this.timer) return

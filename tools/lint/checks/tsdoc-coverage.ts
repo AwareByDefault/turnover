@@ -64,7 +64,9 @@ export function splitTopLevel(text: string): string[] {
     }
     if (ch === '"' || ch === "'" || ch === '`') quote = ch
     else if (ch === '(' || ch === '<' || ch === '{' || ch === '[') depth += 1
-    else if (ch === ')' || ch === '>' || ch === '}' || ch === ']') depth -= 1
+    else if (ch === ')' || ch === '}' || ch === ']') depth -= 1
+    // `>` closes a generic — but not when it's the `>` of an arrow `=>`.
+    else if (ch === '>' && text[i - 1] !== '=') depth -= 1
     else if (ch === ',' && depth === 0) {
       out.push(text.slice(start, i).trim())
       start = i + 1
@@ -86,7 +88,8 @@ function balancedSpan(
   for (let i = openIdx; i < text.length; i += 1) {
     const ch = text[i]
     if (ch === open) depth += 1
-    else if (ch === close) {
+    // For a `<…>` span, don't let the `>` of an arrow `=>` close it early.
+    else if (ch === close && !(close === '>' && text[i - 1] === '=')) {
       depth -= 1
       if (depth === 0) return { inner: text.slice(openIdx + 1, i), end: i }
     }
@@ -336,12 +339,15 @@ export function analyzeDtsText(file: string, text: string): DocViolation[] {
     const balanced = (s: string): boolean => {
       let d = 0
       let q = ''
-      for (const ch of s) {
+      for (let k = 0; k < s.length; k += 1) {
+        const ch = s[k]
         if (q) {
           if (ch === q) q = ''
         } else if (ch === '"' || ch === "'" || ch === '`') q = ch
-        else if ('(<[{'.includes(ch)) d += 1
-        else if (')>]}'.includes(ch)) d -= 1
+        else if (ch === '(' || ch === '<' || ch === '[' || ch === '{') d += 1
+        else if (ch === ')' || ch === ']' || ch === '}') d -= 1
+        // `>` closes a generic — but not the `>` of an arrow `=>`.
+        else if (ch === '>' && s[k - 1] !== '=') d -= 1
       }
       return d <= 0
     }

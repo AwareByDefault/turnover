@@ -25,14 +25,18 @@ export interface Principal {}
  */
 @injectable()
 export class Auth {
-  /** The principal, or throw `401` if the request isn't authenticated. */
+  /**
+   * The current request's principal, or throw a bare `401` `Response` (which
+   * passes through the pipeline unchanged) when unauthenticated. Use
+   * {@link Auth.optional} to branch instead of throw.
+   */
   get user(): Principal {
     const principal = getRequestState()?.principal
     if (!principal) throw new Response('Unauthorized', { status: 401 })
     return principal
   }
 
-  /** The principal, or `null` if unauthenticated. */
+  /** The current request's principal, or `null` if unauthenticated; never throws, unlike {@link Auth.user}. */
   get optional(): Principal | null {
     return getRequestState()?.principal ?? null
   }
@@ -43,7 +47,12 @@ export class Auth {
   }
 }
 
-/** Guard that rejects with `401` unless a principal has been set. */
+/**
+ * Guard rejecting with a bare `401` `Response` unless the request already
+ * carries a principal — one set earlier by an `authentication()` scheme or a
+ * guard calling `setPrincipal`. It only checks presence; use {@link requireRole}
+ * / {@link requireScope} / {@link authorize} for claim or policy checks.
+ */
 export const requireAuth: Guard = () => {
   if (!getRequestState()?.principal) {
     return new Response('Unauthorized', { status: 401 })

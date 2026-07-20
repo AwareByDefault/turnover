@@ -78,7 +78,7 @@ export interface RedisJobClient {
 export interface RedisSessionStoreOptions {
   /** Key prefix (default `"turnover:sess:"`). */
   prefix?: string
-  /** TTL in seconds applied to every write (Redis expires idle sessions). */
+  /** Expiry in **seconds** applied on every write (refreshed each time the session is persisted); omit to keep sessions until they are explicitly destroyed. */
   ttl?: number
 }
 
@@ -92,6 +92,10 @@ export interface RedisSessionStoreOptions {
  *   plugins: [session({ store: redisSessionStore(redis, { ttl: 86_400 }) })],
  * })
  * ```
+ *
+ * @remarks Each session is stored at key `prefix + id` as JSON, so the data bag
+ * must be JSON-serializable. Without a `ttl` option, entries never expire — set
+ * one to reclaim abandoned sessions.
  *
  * @param client - Any client satisfying {@link RedisClient}.
  * @param options - Key prefix and TTL applied to stored sessions.
@@ -126,9 +130,11 @@ export interface RedisCacheStoreOptions {
 
 /**
  * A {@link CacheStore} backed by Redis — a shared backend for `@cacheable`
- * across replicas. Values are JSON-encoded with a per-entry TTL; `clear()`
- * removes only this store's prefixed keys (via `KEYS`, so reserve it for
- * eviction, not a hot path).
+ * across replicas. Values are JSON-encoded; each entry is stored at key
+ * `prefix + key`, and `@cacheable`'s millisecond `ttl` is converted to whole
+ * seconds for Redis `EXPIRE` (rounded up, minimum 1s), so sub-second TTLs
+ * become 1s. `clear()` removes only this store's prefixed keys (via `KEYS`, so
+ * reserve it for eviction, not a hot path).
  *
  * ```ts
  * createApp({ providers: [{ provide: CACHE_STORE, useValue: redisCacheStore(redis) }] })
@@ -175,8 +181,9 @@ export interface RedisOtpStoreOptions {
 
 /**
  * An {@link OtpStore} backed by Redis — for passwordless codes shared across
- * replicas. Each entry is given a Redis TTL matching the code's own expiry, so
- * spent codes are cleaned up automatically.
+ * replicas. Each entry (stored at key `prefix + identifier`) is given a Redis
+ * TTL derived from the code's own `expiresAt` via `clock` (rounded up to whole
+ * seconds, minimum 1s), so spent codes are cleaned up automatically.
  *
  * ```ts
  * const otp = new Passwordless({ store: redisOtpStore(redis) })

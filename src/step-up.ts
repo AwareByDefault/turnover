@@ -26,7 +26,9 @@ export function elevate(session: Session, at: number = Date.now()): void {
 }
 
 /**
- * Clear a session's step-up marker.
+ * Clear a session's step-up marker, so the next {@link requireStepUp} guard
+ * fails until the user re-authenticates — e.g. call it once the sensitive action
+ * completes to keep the elevation short-lived.
  *
  * @param session - The session to clear the step-up marker from.
  */

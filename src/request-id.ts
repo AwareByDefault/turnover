@@ -5,7 +5,9 @@ import { setRequestId } from './request'
 /** Options for the {@link requestId} plugin. */
 export interface RequestIdOptions {
   /**
-   * Header carrying the id on the request and echoed on the response.
+   * Header carrying the id on the request and echoed on the response. Matched
+   * case-insensitively; an inbound value is reused verbatim (never validated or
+   * sanitized), so treat it as untrusted where the id reaches logs or storage.
    * Default `x-request-id`.
    */
   header?: string

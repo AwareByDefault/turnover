@@ -6,7 +6,7 @@ export type EventType<E extends object = object> = abstract new (
   ...args: any[]
 ) => E
 
-/** A subscriber to an event. */
+/** A subscriber to an event; may be async — {@link Events.publish} awaits its result and logs (never rethrows) a rejection. */
 export type EventListener<E> = (event: E) => unknown
 
 /**
@@ -19,12 +19,14 @@ export class Events {
   private readonly listeners = new Map<EventType, Set<EventListener<object>>>()
 
   /**
-   * Subscribe to an event type. Returns an unsubscribe function.
+   * Subscribe to an event type. Matching is by exact event class — a listener on
+   * a base class does not receive published subclass instances (dispatch keys off
+   * `event.constructor`). Returns an unsubscribe function.
    *
    * @typeParam E - The event object type this listener receives.
    * @param type - The event class to subscribe to.
-   * @param listener - Invoked with each published event of `type`.
-   * @returns A function that removes this subscription when called.
+   * @param listener - invoked (and awaited) for each published event of `type`.
+   * @returns an unsubscribe function; calling it removes this listener (repeat calls are no-ops).
    */
   on<E extends object>(
     type: EventType<E>,
@@ -40,10 +42,13 @@ export class Events {
   }
 
   /**
-   * Publish an event to every subscriber of its class; resolves when all finish.
+   * Invoke every subscriber of the event's exact class concurrently; resolve once
+   * all have settled. A listener that throws or rejects is caught and logged
+   * (`console.error`, `[turnover]` prefix) and never fails this call, so one bad
+   * listener cannot block the others. No subscribers is a no-op.
    *
    * @typeParam E - The event object type being published.
-   * @param event - The event instance; its class selects the subscribers.
+   * @param event - the instance to deliver; its exact `constructor` selects the subscribers.
    */
   async publish<E extends object>(event: E): Promise<void> {
     const set = this.listeners.get(event.constructor as EventType)

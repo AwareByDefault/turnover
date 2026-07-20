@@ -129,10 +129,13 @@ export class Passwordless {
   }
 
   /**
-   * Issue a fresh code for `identifier` and return it to send out of band.
+   * Issue a fresh code for `identifier` and return it to send out of band
+   * (e.g. email or SMS). Replaces any pending code for that identifier and resets
+   * its attempt counter, so re-issuing hands the user a clean `maxAttempts` budget;
+   * the code expires `ttl` seconds from now.
    *
    * @param identifier - The account to issue a code for (e.g. email or phone).
-   * @returns The plaintext code to deliver to the user.
+   * @returns The plaintext code — the only moment it exists in the clear, since only its SHA-256 hash is persisted.
    */
   async issue(identifier: string): Promise<string> {
     const code = this.generate()
@@ -150,8 +153,8 @@ export class Passwordless {
    * it has expired.
    *
    * @param identifier - The account the code was issued for.
-   * @param code - The code the user submitted.
-   * @returns `true` if the code matched a live record, else `false`.
+   * @param code - the code the user submitted; surrounding whitespace is trimmed before a constant-time hash comparison.
+   * @returns `true` if the code matched a live record (which is then consumed), else `false` — including when it was wrong, expired, or already exhausted.
    */
   async verify(identifier: string, code: string): Promise<boolean> {
     const record = await this.store.get(identifier)

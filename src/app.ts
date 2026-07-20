@@ -114,7 +114,9 @@ export interface BodyParser {
   /** Media types this parser handles — exact, a subtype wildcard, or catch-all. */
   contentTypes: string[]
   /**
-   * Parse the request body into the value returned by `ctx.body()`.
+   * Parse the request body into the value `ctx.body()` returns. Invoked only for
+   * a request whose content-type matched this parser's {@link BodyParser.contentTypes};
+   * the first registered parser to match wins, ahead of the built-in JSON/text default.
    *
    * @param req - The incoming request whose body to parse.
    * @returns The parsed body value (sync or async) that `ctx.body()` resolves to.
@@ -594,7 +596,8 @@ export class App {
   /**
    * Register fire-and-forget hook(s) run after each response (metrics, logging).
    *
-   * @param hooks - Fire-and-forget hooks run after each response.
+   * @param hooks - Hooks run after the response is settled; a thrown error or
+   *   rejected promise is caught and logged, and never delays the response.
    */
   onAfterResponse(...hooks: AfterResponseHook[]): this {
     this.afterResponseHooks.push(...hooks)

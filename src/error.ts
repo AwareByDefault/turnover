@@ -16,9 +16,9 @@ export interface HttpErrorOptions {
   cause?: unknown
 }
 
-/** The JSON body shape produced for an error response. */
+/** The JSON body shape produced by the default error renderer (the `problemDetails()` plugin replaces it with RFC 9457). */
 export interface ErrorBody {
-  /** The error envelope carrying the message and any optional `code`/`details`. */
+  /** The error envelope; `code`/`details` are omitted from the body when unset, not sent as `undefined`. */
   error: {
     message: string
     code?: string
@@ -39,7 +39,7 @@ export class HttpError extends Error {
   /** Optional structured data included in the response body. */
   readonly details?: unknown
 
-  /** Create an `HttpError` with an HTTP `status`, optional `message`, and `code`/`details`/`cause`. */
+  /** `message` defaults to `HTTP <status>`; `.name` is set to the concrete subclass (e.g. `"NotFoundError"`), and `cause` is chained onto the underlying `Error`. */
   constructor(
     status: number,
     message?: string,

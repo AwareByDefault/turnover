@@ -3,7 +3,7 @@ export type Address = string
 
 /** A message handed to {@link Mailer.send}. */
 export interface Mail {
-  /** Primary recipient(s). */
+  /** Primary recipient(s); at least one is required. A bare string or an array of them. */
   to: Address | Address[]
   /** Sender; falls back to the mailer's default `from`. */
   from?: Address
@@ -13,7 +13,7 @@ export interface Mail {
   bcc?: Address | Address[]
   /** Address replies should be directed to. */
   replyTo?: Address
-  /** Subject line. */
+  /** Subject line; required (a blank subject is rejected). */
   subject: string
   /** Plain-text body. At least one of `text`/`html` is required. */
   text?: string
@@ -38,9 +38,11 @@ export interface OutgoingMail extends Mail {
 /** Delivers a normalized message. Implement this over SMTP or a mail API. */
 export interface MailTransport {
   /**
-   * Deliver a normalized message.
+   * Deliver one already-normalized message. Called once per {@link Mailer.send};
+   * recipient fields are arrays and `from` is resolved. Throw to signal a
+   * delivery failure.
    *
-   * @param mail - the normalized outgoing message to deliver
+   * @param mail - the normalized message to deliver; see {@link OutgoingMail}
    */
   send(mail: OutgoingMail): Promise<void>
 }
@@ -107,10 +109,12 @@ export class Mailer {
   }
 
   /**
-   * Normalize, validate, and deliver a message; returns what was sent.
+   * Normalize (recipient fields to arrays, apply the default `from`), validate,
+   * then hand off to the transport. Throws if `to` is empty, no `from` can be
+   * resolved, `subject` is blank, or neither `text` nor `html` is set.
    *
-   * @param mail - the message to send
-   * @returns the normalized {@link OutgoingMail} that was delivered
+   * @param mail - the message to send; an omitted `from` falls back to the mailer's default
+   * @returns the normalized {@link OutgoingMail} that was handed to the transport
    */
   async send(mail: Mail): Promise<OutgoingMail> {
     const to = toArray(mail.to)

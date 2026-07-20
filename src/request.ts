@@ -63,9 +63,11 @@ export function getRequestStore(): RequestStore | undefined {
 }
 
 /**
- * Attach the authenticated principal to the current request (called by guards).
+ * Attach the authenticated principal to the current request (called by guards);
+ * later reads see it via `ctx.principal` / {@link getRequestState}. Throws if
+ * called outside a request context.
  *
- * @param principal - The authenticated principal to bind to the request.
+ * @param principal - The authenticated principal to bind for the rest of this request.
  */
 export function setPrincipal(principal: Principal): void {
   const state = storage.getStore()
@@ -85,7 +87,9 @@ export function getRequestId(): string | undefined {
 }
 
 /**
- * Set the current request's correlation id (called by the `requestId()` plugin).
+ * Set the current request's correlation id (called by the `requestId()` plugin);
+ * afterwards {@link getRequestId} and every {@link Logger} record report it. A
+ * silent no-op outside a request context — unlike {@link setPrincipal}, which throws.
  *
  * @param id - The correlation id to store on the current request.
  */
