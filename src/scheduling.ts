@@ -3,7 +3,7 @@ import { type Ctor, ctxMeta, metadataOf, SCHEDULED } from './metadata'
 
 /** Options for the `@scheduled` decorator. */
 export interface ScheduledOptions {
-  /** Delay between the end of scheduling and each run, in milliseconds (a fixed `setInterval` period, not adjusted for run duration). */
+  /** Milliseconds between the starts of consecutive runs (a fixed `setInterval` period, not adjusted for run duration). */
   interval: number
   /**
    * When `true`, also fire once immediately at start — or at registration if the

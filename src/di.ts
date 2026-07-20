@@ -456,9 +456,10 @@ export function repository(options: { scope?: Scope } = {}) {
 
 /**
  * Method decorator: run this method right after the container constructs the
- * instance (once field initializers have run). Sync hooks run inline; async
- * hooks are awaited at bootstrap via `container.init()` (which `createApp`
- * calls). Use it for per-service setup (open a pool, warm a cache).
+ * instance (once field initializers have run). Sync hooks run inline; an async
+ * hook on a **singleton** is awaited at bootstrap via `container.init()` (which
+ * `createApp` calls) — on a transient/request bean it is invoked but not awaited.
+ * Use it for per-service setup (open a pool, warm a cache).
  *
  * @param _value - the decorated method (unused; the hook is keyed by name).
  * @param context - the standard method-decorator context, whose `name` records the hook.

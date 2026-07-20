@@ -38,7 +38,7 @@ export interface Context<
   /**
    * The matched route pattern (e.g. `/users/:id`) — low-cardinality, unlike
    * `req.url`. Use it for telemetry span names / metric labels and structured
-   * logging. `""` for a 404 (no route matched).
+   * logging.
    */
   readonly route: string
   /**
@@ -112,7 +112,7 @@ export type Guard = (ctx: Context) => void | Response | Promise<void | Response>
  * An error handler. Runs when a route handler or guard throws (anything other
  * than a `Response`, which short-circuits directly). Return a `Response` to
  * handle the error, or return nothing to defer to the next handler in the chain
- * (route → controller → global → the framework default).
+ * (route → controller → module → global → the framework default).
  */
 export type ErrorHandler = (
   err: unknown,
@@ -253,7 +253,7 @@ export function use(...guards: Guard[]) {
 /**
  * Attach error handlers to a controller (every route) or a single route. They
  * run when a handler/guard throws, most-specific first (route → controller →
- * global), until one returns a `Response`.
+ * module → global → the framework default), until one returns a `Response`.
  *
  * ```ts
  * @controller("/orders")

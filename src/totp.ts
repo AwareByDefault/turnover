@@ -115,6 +115,7 @@ export class Totp {
    * @param secret - The user's base32-encoded shared secret.
    * @param at - The time to compute the code for (default now).
    * @returns The current TOTP code, zero-padded to `digits`.
+   * @throws If `secret` is not valid base32 (a character outside the RFC 4648 alphabet).
    */
   code(secret: string, at: Date = nowDate()): string {
     const counter = Math.floor(at.getTime() / 1000 / this.period)
@@ -137,6 +138,7 @@ export class Totp {
    * @param secret - The user's base32-encoded shared secret.
    * @param token - the code the user submitted; trimmed before comparison.
    * @param options - `window` is the ± number of `period` steps of clock skew to accept (default 1 = previous, current, and next code); `at` overrides the reference time (default now).
+   * @throws If `secret` is not valid base32 (a character outside the RFC 4648 alphabet).
    */
   verify(
     secret: string,

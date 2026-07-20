@@ -7,7 +7,7 @@ export interface CompressionOptions {
   threshold?: number
   /**
    * Extra `Content-Type` substrings to treat as compressible (matched with
-   * `includes`), on top of the built-in `text/*`, JSON, and XML types.
+   * `includes`), on top of the built-in `text/*`, JSON, JavaScript, and XML types.
    */
   types?: string[]
 }
@@ -32,7 +32,7 @@ function isCompressible(contentType: string, extra?: string[]): boolean {
  * ```
  *
  * @param options - tune the size `threshold` and add compressible content
- *   `types`; defaults compress text/JSON/XML bodies over 1 KB
+ *   `types`; defaults compress text/JSON/JavaScript/XML bodies of at least 1 KB
  * @returns a plugin whose interceptor gzips eligible responses
  */
 export function compression(options: CompressionOptions = {}): Plugin {

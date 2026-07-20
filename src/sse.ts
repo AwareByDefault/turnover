@@ -32,7 +32,7 @@ function formatEvent(event: SseEvent): string {
 }
 
 /**
- * Build a streaming `text/event-stream` {@link Response} from an async source —
+ * Build a streaming `text/event-stream` `Response` from an async source —
  * return it straight from a route handler. The source is an async iterable (or
  * a function returning one), so an async generator that `yield`s events is the
  * usual shape; drive a push-style stream with an {@link SseChannel}. Iteration
@@ -48,9 +48,9 @@ function formatEvent(event: SseEvent): string {
  * }
  * ```
  *
- * @param source - the events to stream: an async iterable, or a function returning one (invoked once when the response starts streaming)
+ * @param source - the events to stream: an async iterable, or a function returning one (invoked synchronously as soon as `sse()` is called, before the `Response` exists)
  * @param options - keep-alive interval and extra response headers; see {@link SseOptions}
- * @returns a streaming `text/event-stream` {@link Response} to return from a handler
+ * @returns a streaming `text/event-stream` `Response` to return from a handler
  */
 export function sse(
   source: AsyncIterable<SseEvent> | (() => AsyncIterable<SseEvent>),

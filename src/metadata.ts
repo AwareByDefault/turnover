@@ -129,7 +129,7 @@ export function ctxMeta(context: { metadata: unknown }): MetaBag {
 
 /**
  * The metadata bag attached to a class at runtime (`Class[Symbol.metadata]`),
- * or `undefined` if it carries none — the read side of {@link ctxMeta}. Use it
+ * or `undefined` if it carries none — the read side of {@link decoratorMeta}. Use it
  * in a container post-processor to inspect a class's decorator metadata and
  * decide whether (and how) to wrap its instances.
  *

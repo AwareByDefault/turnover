@@ -47,7 +47,7 @@ export const CACHE_STORE = new InjectionToken<CacheStore>('CacheStore')
 
 /**
  * The default {@link CacheStore}: a process-local `Map` with per-entry TTL.
- * Expiry is lazy — an entry is purged only when next read via {@link get}, so an
+ * Expiry is lazy — an entry is purged only when next read via {@link MemoryCache.get}, so an
  * unread expired entry keeps its memory until then, and the map is unbounded (no
  * max size or LRU). Not shared across replicas; back `@cacheable` with a shared
  * store such as `redisCacheStore` for that.

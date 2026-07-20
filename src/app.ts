@@ -240,7 +240,8 @@ export interface ListenOptions {
   hostname?: string
   /**
    * Install SIGTERM/SIGINT handlers that gracefully {@link App.stop} then exit
-   * with code 0. Default `true`. Set `false` to manage signals yourself.
+   * (code 0, or 1 if shutdown fails). Default `true`. Set `false` to manage
+   * signals yourself.
    */
   signals?: boolean
 }

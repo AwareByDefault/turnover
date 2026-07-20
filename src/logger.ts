@@ -49,9 +49,10 @@ function envLevel(): LogLevel {
 
 /**
  * Structured, injectable logger. Quiet by default — only records at or above the
- * minimum level (`info` unless `LOG_LEVEL` says otherwise) are emitted — and
- * every record is automatically stamped with the current request's id (see
- * {@link requestId}), so logs correlate to requests with no plumbing.
+ * minimum level (`info` unless `LOG_LEVEL` says otherwise) are emitted — and,
+ * when the {@link requestId} plugin is active, each record emitted inside a
+ * request is stamped with its id, so logs correlate to requests with no per-call
+ * plumbing.
  *
  * ```ts
  * class Orders {

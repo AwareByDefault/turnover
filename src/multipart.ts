@@ -31,8 +31,10 @@ export class UploadedFile {
   }
 
   /**
-   * Read the entire file into memory as bytes. Buffers the whole upload — prefer
-   * {@link UploadedFile.blob} to stream large files instead.
+   * Read the entire file into memory as bytes. The upload is already fully in
+   * memory (the whole body was buffered by `req.formData()` during parsing), so
+   * this only copies it into a `Uint8Array`; use {@link UploadedFile.blob} to
+   * pass the `File` through without the extra copy.
    *
    * @returns the full contents as a `Uint8Array`
    */
@@ -82,9 +84,10 @@ function typeAllowed(type: string, allowed: string[]): boolean {
 
 /**
  * Plugin: parse `multipart/form-data` bodies into `{ fields, files }`, readable
- * through `ctx.body<MultipartBody>()` like any other body. Enforces optional
- * count/size/type limits up front (using each file's known size, without
- * buffering) and rejects violations with `400`/`413`/`415`.
+ * through `ctx.body<MultipartBody>()` like any other body. `req.formData()`
+ * first buffers the entire request body into memory; the optional
+ * count/size/type limits then reject violations with `400`/`413`/`415` but do
+ * not cap what is read into memory — that ceiling is Bun's `maxRequestBodySize`.
  *
  * ```ts
  * const app = await createApp({

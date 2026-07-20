@@ -61,7 +61,7 @@ export interface TokenResponse {
   raw: Record<string, unknown>
 }
 
-/** Thrown when the token endpoint responds with a non-2xx status. */
+/** Thrown when the token or userinfo endpoint responds with a non-2xx status. */
 export class OAuth2Error extends Error {
   /** Construct an error for a failed token or userinfo request. */
   constructor(

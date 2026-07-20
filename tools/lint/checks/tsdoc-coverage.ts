@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import packageJson from '../../../package.json'
 
-/** A single documentation gap, reported as `file:line: symbol — message`. */
+/** A single documentation gap, reported as `file: symbol — message` (the line is retained for sorting only). */
 export interface DocViolation {
   /** The `.d.ts` file (basename) the flagged declaration lives in. */
   readonly file: string

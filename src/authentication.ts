@@ -21,8 +21,8 @@ export interface AuthScheme {
 }
 
 /**
- * Plugin: a baked-in authentication stage. On every request it runs the given
- * schemes in order; the first to resolve a principal wins and is attached to
+ * Plugin: a baked-in authentication stage. On every matched request it runs the
+ * given schemes in order; the first to resolve a principal wins and is attached to
  * the request (so `inject(Auth).user`, `@authenticated`, and `@requireRole`
  * see it). A request that no scheme recognises is simply anonymous.
  *
@@ -33,7 +33,7 @@ export interface AuthScheme {
  * ```
  *
  * @param schemes - The schemes to try in order; the first to resolve a principal wins.
- * @returns A plugin that runs the authentication stage on every request.
+ * @returns A plugin that runs the authentication stage on every matched request.
  */
 export function authentication(schemes: AuthScheme[]): Plugin {
   const wrap: Interceptor = async (ctx, next) => {
@@ -51,7 +51,7 @@ export function authentication(schemes: AuthScheme[]): Plugin {
 
 /** Options for the {@link bearer} scheme. */
 export interface BearerOptions {
-  /** Verify a token, returning the principal or `null` to reject it. */
+  /** Verify a token, returning the principal or `null` to defer — the request stays anonymous unless another scheme matches or a route guard blocks it. */
   verify: (token: string) => Principal | null | Promise<Principal | null>
   /** Authorization scheme name. Default `Bearer`. */
   scheme?: string
@@ -78,7 +78,7 @@ export function bearer(options: BearerOptions): AuthScheme {
 
 /** Options for the {@link apiKey} scheme. */
 export interface ApiKeyOptions {
-  /** Verify a key, returning the principal or `null` to reject it. */
+  /** Verify a key, returning the principal or `null` to defer — the request stays anonymous unless another scheme matches or a route guard blocks it. */
   verify: (key: string) => Principal | null | Promise<Principal | null>
   /** Header carrying the key. Default `x-api-key`. */
   header?: string

@@ -8,7 +8,7 @@ import { getRequestState } from './request'
  * Intentionally empty — augment it in your app to describe your user:
  *
  * ```ts
- * declare module "<path-to>/framework/auth" {
+ * declare module "turnover/auth" {
  *   interface Principal { id: string; roles: string[] }
  * }
  * ```

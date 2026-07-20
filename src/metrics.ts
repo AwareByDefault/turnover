@@ -338,10 +338,11 @@ export interface MetricsOptions {
 
 /**
  * Plugin: auto-instrument HTTP traffic and expose Prometheus metrics. Records
- * `http_requests_total` (counter), `http_request_duration_seconds` (histogram),
- * and `http_requests_in_flight` (gauge) — labelled by method, route *pattern*
- * (low cardinality), and status — and serves the exposition format at
- * `endpoint`. The scrape endpoint is served before routing, so it isn't counted.
+ * `http_requests_total` (counter) and `http_request_duration_seconds`
+ * (histogram) — both labelled by method, route *pattern* (low cardinality), and
+ * status — plus `http_requests_in_flight` (gauge), which is unlabeled (a single
+ * series), and serves the exposition format at `endpoint`. The scrape endpoint
+ * is served before routing, so it isn't counted.
  *
  * ```ts
  * const app = await createApp({ plugins: [metrics()] }) // GET /metrics

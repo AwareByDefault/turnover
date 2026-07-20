@@ -2,7 +2,7 @@
 // `app.openapi()` produces). Available at the `turnover/codegen` subpath; run it
 // at build time and commit or bundle the output.
 //
-// CLI wrapper (four lines):
+// CLI wrapper (two lines):
 //   const doc = await Bun.file(process.argv[2]).json()
 //   await Bun.write(process.argv[3], generateClient(doc))
 

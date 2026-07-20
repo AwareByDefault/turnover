@@ -7,7 +7,7 @@ import type { Principal } from './auth'
  * your derivers add:
  *
  * ```ts
- * declare module "<path-to>/framework/request" {
+ * declare module "turnover/request" {
  *   interface RequestStore { session: Session; tenantId: string }
  * }
  * ```
