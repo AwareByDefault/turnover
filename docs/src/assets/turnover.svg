@@ -1,0 +1,6 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Turnover">
+  <rect width="48" height="48" rx="11" fill="#6d5cff"/>
+  <path d="M33.5 16.2a12 12 0 1 0 2.3 9.3" stroke="#fff" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+  <path d="M34.8 9.5v7.2h-7.2" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="24" cy="24" r="4.4" fill="#fff"/>
+</svg>
