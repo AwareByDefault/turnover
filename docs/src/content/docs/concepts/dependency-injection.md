@@ -131,8 +131,9 @@ app.container.register(LOGGER, { useValue: silentLogger });
 Two method decorators hook into a service's life:
 
 - **`@postConstruct`** runs right after construction (once field initializers have run).
-  Sync hooks run inline; **async hooks are awaited during `createApp`**, so a service is fully
-  initialized before you serve.
+  Sync hooks run inline; an **async hook on a singleton is awaited during `createApp`**, so the
+  service is fully initialized before you serve. (On a transient or request-scoped bean an async
+  hook is invoked but *not* awaited.)
 - **`@preDestroy`** runs on `app.stop()`, in **reverse** construction order.
 
 ```ts

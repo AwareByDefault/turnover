@@ -58,8 +58,8 @@ curl http://localhost:3000/hello
 { "message": "Hello from turnover" }
 ```
 
-On boot the console also prints the discovered route table, so you can confirm
-`GET /hello` was mounted.
+Want to confirm what mounted? `app.routeTable()` returns a `{ pattern: [methods] }` map —
+`console.log(app.routeTable())` prints `{ "/hello": [ "GET" ] }`.
 
 ## Prefer explicit wiring?
 

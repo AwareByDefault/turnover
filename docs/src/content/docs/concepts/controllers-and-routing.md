@@ -91,9 +91,9 @@ generic: `Context<{ id: string }>`.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `ctx.req` | `Request` | The raw Web `Request`. |
-| `ctx.route` | `string` | The matched pattern, e.g. `/users/:id` — low-cardinality (unlike `req.url`), ideal for telemetry span names, metric labels, and structured logging. `""` for a 404. |
-| `ctx.params` | `Record<string, string>` | Path params captured from the pattern. |
-| `ctx.query` | `URLSearchParams` | The parsed query string. |
+| `ctx.route` | `string` | The matched route pattern, e.g. `/users/:id` — low-cardinality (unlike `req.url`), ideal for telemetry span names, metric labels, and structured logging. Always a real pattern (a `Context` only exists once a route matches). |
+| `ctx.params` | `Record<string, string>` | Path params captured from the pattern, already URL-decoded (an empty object when the pattern has no `:param` segments). |
+| `ctx.query` | `URLSearchParams` | The raw query string, uncoerced — use `getAll` for repeated keys. |
 | `ctx.body<T>()` | `() => Promise<T>` | Lazily reads and parses the **raw** body (JSON when the content-type says so). The result is cached, so validation and your handler read the body once. |
 | `ctx.valid` | `ValidatedInputs` | Validated, coerced inputs — populated only for the inputs a route declared a schema for. See [Validation](/concepts/validation/). |
 | `ctx.set` | `ResponseState` | Mutate the outgoing status and headers of a coerced return value. See [Responses & cookies](/concepts/responses-and-cookies/). |
@@ -151,6 +151,12 @@ curl -i -X PUT localhost:3000/users        # only GET/POST registered
 # HTTP/1.1 405 Method Not Allowed
 # Allow: GET, POST
 ```
+
+:::note
+Both responses are produced during routing, **before any handler `Context` exists** — an
+unmatched request never reaches a handler, so there is no `ctx` (and no `ctx.route`) for a
+`404` or `405`.
+:::
 
 ## Registering controllers
 

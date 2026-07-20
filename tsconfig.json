@@ -111,5 +111,5 @@
   },
   // The stress-test fixture is generated at runtime (gitignored) and validated
   // by running it, not by tsc — never typecheck it.
-  "exclude": ["test/.scan-fixture"]
+  "exclude": ["test/.scan-fixture", "docs"]
 }

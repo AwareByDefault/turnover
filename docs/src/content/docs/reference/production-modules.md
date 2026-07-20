@@ -128,7 +128,7 @@ const app = await createApp({
 | `requestId` | `turnover` | plugin | Give each request a correlation id (reuse inbound `x-request-id` or mint one); readable via `getRequestId()` and echoed on the response. |
 | `rateLimit` | `turnover` | plugin | Fixed-window rate limiting → `429` with `Retry-After`; bucket via `keyBy`, swap the counter `store` for a shared one. |
 | `serveStatic` | `turnover` | plugin | Serve files from a directory before routing; a missing file falls through to the router. |
-| `multipart` | `turnover` | plugin (registers a `BodyParser`) | Parse `multipart/form-data` into `{ fields, files }`, read through `ctx.body<MultipartBody>()`, with count/size/type limits. |
+| `multipart` | `turnover` | plugin (registers a `BodyParser`) | Parse `multipart/form-data` into `{ fields, files }`, read through `ctx.body<MultipartBody>()`. Count/size/type limits reject with `400`/`413`/`415`, but `req.formData()` buffers the whole body first — the limits don't cap memory (Bun's `maxRequestBodySize` does). |
 | `sse` | `turnover` | Response builder | Return a streaming `text/event-stream` response from a handler. |
 | `SseChannel` | `turnover` | class (`new`) | A push-driven event source for `sse()`. |
 | `pageParams` / `paginated` | `turnover` | helpers | Read and clamp `?page` / `?limit`; wrap results in a standard `Page` envelope. |
@@ -188,9 +188,9 @@ const app = await createApp({
 | `health` | `turnover` | plugin | Mount `/health` (liveness) and `/ready` (readiness, aggregating checks → `200`/`503`). |
 | `HEALTH_CHECK` | `turnover` | token (multi-inject) | Bind readiness checks that `health()` collects from the container. |
 | `problemDetails` | `turnover` | plugin | Render errors as RFC 9457 `application/problem+json` instead of the default envelope. |
-| `metrics` | `turnover` | plugin (+ `MetricsRegistry`) | Auto-instrument HTTP traffic and expose Prometheus metrics at `/metrics`; `inject(MetricsRegistry)` for custom metrics. |
+| `metrics` | `turnover` | plugin (+ `MetricsRegistry`) | Auto-instrument HTTP traffic and expose Prometheus metrics at `/metrics`: `http_requests_total` and `http_request_duration_seconds` labelled by method/route/status, plus an unlabeled `http_requests_in_flight` gauge; `inject(MetricsRegistry)` for custom metrics. |
 | `Counter` / `Gauge` / `Histogram` / `MetricsRegistry` | `turnover` | classes | Build and record custom Prometheus metrics. |
-| `Logger` | `turnover` | injectable | Structured JSON logs auto-stamped with the current request id; bind `LOG_SINK` / `LOG_LEVEL` to reconfigure. |
+| `Logger` | `turnover` | injectable | Structured JSON logs (stdout; `warn`/`error` to stderr), stamped with the current request id when the `requestId()` plugin is active; bind `LOG_SINK` / `LOG_LEVEL` to reconfigure. |
 | `JobQueue` | `turnover` | class (`new`) | In-process background jobs with retries, exponential backoff, delays, and a dead-letter list. |
 | `Mailer` | `turnover` | class (`new`) | Transport-agnostic email sender; ships `memoryTransport()` for tests and dev. |
 
@@ -202,7 +202,7 @@ are plain classes you construct (or register as providers):
 class Orders {
   private readonly log = inject(Logger);
   place() {
-    this.log.info("order placed", { total: 42 }); // JSON line, stamped with the request id
+    this.log.info("order placed", { total: 42 }); // JSON line; stamped with the request id when requestId() is registered
   }
 }
 

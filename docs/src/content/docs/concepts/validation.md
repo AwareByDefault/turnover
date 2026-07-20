@@ -93,7 +93,9 @@ failure — the one framework-emitted error code, `validation_failed`:
 ```
 
 `location` is whichever of `body` / `query` / `params` failed; `issues` lists each problem
-with its message and path.
+with its message and path. Inputs are checked in the `params` → `query` → `body` order and
+validation stops at the **first** one that fails, so a single response reports a single
+`location` — fix it and re-send to surface the next.
 
 ## Response validation
 

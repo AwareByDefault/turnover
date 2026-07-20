@@ -49,7 +49,8 @@ class FeatureFlags {
 ```
 
 `Config.get` carries the same coercing overloads as `value()`; `require`, `has`, and
-`hasProfile` round it out.
+`hasProfile` round it out. Each call reads the source fresh, so a getter like `pageSize`
+always reflects the current value rather than a snapshot taken at construction.
 
 ## Overriding the source
 

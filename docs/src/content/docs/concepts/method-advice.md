@@ -103,12 +103,15 @@ recover from an error.
 When a method carries several advices, they run in a fixed order regardless of
 the order you *wrote* the decorators:
 
-1. `@before` advices run first.
-2. `@around` advices wrap the call — the **top-most** `@around` is the
-   outermost, so its code runs first on the way in and last on the way out.
+1. The `@around` chain wraps everything else. The **top-most** `@around` is the
+   outermost, so its code runs first on the way in and last on the way out, with
+   each inner one nested inside it.
+2. `@before` advices run next — *inside* every `@around`, immediately before the
+   method body.
 3. The method itself runs.
-4. `@after` advices run last (in a `finally`; async results are awaited before
-   they fire).
+4. `@after` advices run last of all, in a `finally` *outside* the `@around`
+   chain: they fire after every `@around` has unwound (async results are awaited
+   first) and even when the method throws.
 
 ## Built-in advice: transactions
 
@@ -193,8 +196,11 @@ const app = await createApp({
 
 :::note
 Because the cache store is async, a `@cacheable` method **always returns a
-`Promise`** — `await` it even when the method body is synchronous. `@cacheEvict`
-clears the **entire** store, not just this method's entries.
+`Promise`** — `await` it even when the method body is synchronous. A resolved
+`undefined` is never cached (it reads back as a miss, so those calls re-run every
+time). `@cacheEvict` clears the **entire** store, not just this method's entries —
+and it does so *before* the method body runs, so a throwing method still empties
+the cache. With a shared store, both operate across every class's entries.
 :::
 
 ## Building custom advice

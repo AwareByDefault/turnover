@@ -72,9 +72,14 @@ export class SessionController {
 **Queueing outgoing cookies:**
 
 - `ctx.cookies.set(name, value, options?)` — queue a `Set-Cookie`.
-- `ctx.cookies.delete(name, options?)` — queue a `Set-Cookie` that expires the cookie.
+- `ctx.cookies.delete(name, options?)` — queue a `Set-Cookie` that clears the cookie (empty
+  value, `Max-Age=0`, and a 1970 `Expires`). Pass the same `path`/`domain` you set it with —
+  a browser only drops a cookie whose scope matches — and note `delete` accepts only those
+  scoping options; `expires`/`maxAge` are filled in for you.
 
-Cookie values are URL-encoded on the way out and decoded on the way in.
+Each `set` or `delete` call queues its **own** `Set-Cookie` header — there's no dedupe, so
+queuing the same name twice emits two headers. Cookie values are URL-encoded on the way out
+and decoded on the way in.
 
 ### Cookie options
 

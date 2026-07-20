@@ -195,9 +195,12 @@ const app = await createApp({
 - **`apiKey({ verify, header? })`** — reads a key from a header (default `x-api-key`) and
   calls `verify(key)`.
 
-Each `verify` returns the `Principal` on success or `null` to reject the credential and
-defer to the next scheme. Implement the `AuthScheme` interface yourself for any other
-credential type.
+Each `verify` returns the `Principal` on success, or `null` to **defer** — it does *not*
+reject. There is no reject signal: a `null` just means "not my credential," so the next
+scheme is tried, and if none resolves a principal the request is simply left **anonymous**.
+Turning that anonymous request into a `401` is a route guard's job (`@authenticated`,
+`@requireRole`, …). Implement the `AuthScheme` interface yourself for any other credential
+type.
 
 ## Next steps
 

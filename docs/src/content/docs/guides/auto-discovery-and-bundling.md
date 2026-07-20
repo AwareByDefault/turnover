@@ -15,7 +15,8 @@ covers both, and how to keep discovery working when you bundle.
 Call `createApp()` with no `controllers` and no `modules`, and it scans your entry file's
 directory tree (`**/*.ts` via `Bun.Glob`), imports every file whose source contains
 `@controller(`, and lets each one self-register as its module loads. There is no barrel of
-imports to maintain.
+imports to maintain. Detection is a plain text match for `@controller(` — not real parsing —
+so a file is imported even if that text only appears in a comment or string.
 
 ```ts title="server.ts"
 import { createApp } from "turnover";

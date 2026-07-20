@@ -44,7 +44,9 @@ returns `403 Forbidden` otherwise.
 ## The factory runs in an injection context
 
 `defineMacro(name, factory)` stores a factory keyed by `name`. The factory receives the
-arguments you pass to `@macro(name, ...args)` and returns a `MacroHooks` bundle.
+arguments you pass to `@macro(name, ...args)` and returns a `MacroHooks` bundle. Registration
+is process-global, and re-registering the same `name` replaces the previous factory — the
+last `defineMacro` for a name wins.
 
 The key detail: **the factory is invoked in an injection context at mount time**, so it can
 `inject()` services and close over them in the hooks it returns. In the example above,

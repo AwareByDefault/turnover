@@ -124,6 +124,6 @@ testing.
 
 ## Next steps
 
-- [Typed client](/guides/typed-client/) — drive an app in-memory with a fully typed client via `fetch: app.handle`.
+- [Typed client](/guides/typed-client/) — drive an app in-memory with a fully typed client via `fetch: (req) => app.handle(req)`.
 - [Controllers & routing](/concepts/controllers-and-routing/) — the `Context` object and how return values become responses.
 - [The request lifecycle](/concepts/the-request-lifecycle/) — every stage a request passes through in `handle()`.

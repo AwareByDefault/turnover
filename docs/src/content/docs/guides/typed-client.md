@@ -78,15 +78,18 @@ Every call resolves to a `ClientResult`:
 
 ```ts
 interface ClientResult<T> {
-  data?: T;         // present on a 2xx response (typed to the route's 200/201 body)
-  error?: unknown;  // present on a non-2xx response (the parsed body)
-  response: Response; // the raw Response, always available
+  data?: T;         // set only on a 2xx response (typed to the route's 200/201 body)
+  error?: unknown;  // set only on a non-2xx response (the parsed body)
+  response: Response; // the raw Response, always available (its body already read)
 }
 ```
 
-On a 2xx the client fills `data`; otherwise it fills `error`. JSON responses are parsed as
-JSON, everything else as text. Path params come from `params.path`, query params from
-`params.query`, and per-call `headers` merge over the config defaults.
+`data` and `error` are mutually exclusive: on a 2xx the client fills `data`, otherwise it
+fills `error`. Either way the call **resolves** — the client never throws on an HTTP status,
+so you branch on `error` rather than wrap the call in `try`/`catch`; only a transport (`fetch`)
+failure rejects. JSON responses are parsed as JSON, everything else as text. Path params come
+from `params.path`, query params from `params.query`, and per-call `headers` merge over the
+config defaults.
 
 Options are **required only when a route has path params or a body** — a parameter-free
 `GET` can be called with just the path.

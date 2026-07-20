@@ -45,6 +45,9 @@ class UsersController {
 
 Publishing a `UserCreated` runs every method subscribed to that event class. The event's
 runtime class is what routes it — `publish` looks up listeners by `event.constructor`.
+Matching is by **exact class**: a listener registered on a base class does *not* receive
+published subclass instances (and vice versa), so subscribe to the concrete class you
+publish.
 
 ## publish awaits every listener
 

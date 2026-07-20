@@ -41,7 +41,8 @@ The scheduler is tied to the server's lifecycle: it is **started by `app.listen(
 stopped by `app.stop()`**. Nothing fires before you listen, and everything stops on a clean
 shutdown.
 
-- `interval` is the number of **milliseconds** between runs.
+- `interval` is the number of **milliseconds** between the *starts* of consecutive
+  runs — a fixed `setInterval` period, not stretched to account for how long a run takes.
 - `runOnStart: true` also runs the method **once immediately at startup**, before the first
   interval elapses:
 
