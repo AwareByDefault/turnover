@@ -12,11 +12,25 @@ export type SessionData = Record<string, unknown>
  * it; {@link memorySessionStore} is the in-process default.
  */
 export interface SessionStore {
-  /** Load a session's data, or `undefined` if absent/expired. */
+  /**
+   * Load a session's data, or `undefined` if absent/expired.
+   *
+   * @param id - The session id to load.
+   * @returns The session's data, or `undefined` if absent or expired.
+   */
   get(id: string): Promise<SessionData | undefined>
-  /** Persist a session's data. */
+  /**
+   * Persist a session's data.
+   *
+   * @param id - The session id to store under.
+   * @param data - The session data bag to persist.
+   */
   set(id: string, data: SessionData): Promise<void>
-  /** Remove a session. */
+  /**
+   * Remove a session.
+   *
+   * @param id - The session id to remove.
+   */
   destroy(id: string): Promise<void>
 }
 
@@ -24,6 +38,8 @@ export interface SessionStore {
  * In-memory {@link SessionStore} backed by a `Map`, with an optional sliding
  * lifetime. Fine for a single process or tests; use a shared store (Redis, a
  * database) across replicas.
+ *
+ * @param options - Store settings; `ttl` sets a sliding lifetime in seconds.
  */
 export function memorySessionStore(
   options: { ttl?: number } = {},
@@ -111,12 +127,23 @@ export class Session {
     return this.current().data
   }
 
-  /** A stored value. */
+  /**
+   * A stored value.
+   *
+   * @typeParam T - The expected type of the stored value.
+   * @param key - The key to read from the session data.
+   * @returns The stored value, or `undefined` if the key is unset.
+   */
   get<T = unknown>(key: string): T | undefined {
     return this.current().data[key] as T | undefined
   }
 
-  /** Store a value, minting a session id on first write. */
+  /**
+   * Store a value, minting a session id on first write.
+   *
+   * @param key - The key to store the value under.
+   * @param value - The value to store.
+   */
   set(key: string, value: unknown): void {
     const state = this.current()
     state.data[key] = value
@@ -125,7 +152,11 @@ export class Session {
     state.id ??= crypto.randomUUID()
   }
 
-  /** Remove a single value. */
+  /**
+   * Remove a single value.
+   *
+   * @param key - The key to remove from the session data.
+   */
   delete(key: string): void {
     const state = this.current()
     delete state.data[key]
@@ -168,6 +199,9 @@ export class Session {
  * ```ts
  * const app = await createApp({ plugins: [session()] })
  * ```
+ *
+ * @param options - Store, cookie name, and cookie attribute overrides.
+ * @returns A plugin that loads, exposes, and persists the per-request session.
  */
 export function session(options: SessionOptions = {}): Plugin {
   const store = options.store ?? memorySessionStore()

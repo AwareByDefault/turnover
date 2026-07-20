@@ -6,9 +6,13 @@ import { CLASS_MACROS, ctxMeta, METHOD_MACROS } from './metadata'
  * `@use` / `@derive` / `@intercept` / `@catchError` attach.
  */
 export interface MacroHooks {
+  /** Guards to attach (like `@use`). */
   use?: Guard[]
+  /** Derivers to attach (like `@derive`). */
   derive?: Deriver[]
+  /** Interceptors to attach (like `@intercept`). */
   intercept?: Interceptor[]
+  /** Error handlers to attach (like `@catchError`). */
   catchError?: ErrorHandler[]
 }
 
@@ -20,7 +24,9 @@ export type MacroFactory = (...args: any[]) => MacroHooks
 
 /** One application of a macro on a controller/route: its name and arguments. */
 export interface MacroApplication {
+  /** Name of the registered macro to apply. */
   name: string
+  /** Arguments passed through to the macro's factory. */
   args: unknown[]
 }
 
@@ -37,12 +43,21 @@ const registry = new Map<string, MacroFactory>()
  *                     : new Response("Forbidden", { status: 403 })] };
  * });
  * ```
+ *
+ * @param name - The name the macro is applied by via `@macro(name, ...)`.
+ * @param factory - Builds the macro's hooks from its arguments at mount time.
  */
 export function defineMacro(name: string, factory: MacroFactory): void {
   registry.set(name, factory)
 }
 
-/** Apply a registered macro (by name, with args) to a controller or route. */
+/**
+ * Apply a registered macro (by name, with args) to a controller or route.
+ *
+ * @param name - The name of the registered macro to apply.
+ * @param args - Arguments passed through to the macro's factory.
+ * @returns A class/method decorator that records the macro application.
+ */
 export function macro(name: string, ...args: unknown[]) {
   return (
     _value: unknown,
@@ -69,6 +84,9 @@ export function macro(name: string, ...args: unknown[]) {
 /**
  * Expand macro applications into merged hooks. Call inside `container.runInContext`
  * so factories can `inject()`. Throws if a macro name is not registered.
+ *
+ * @param applications - The macro applications to expand, in order.
+ * @returns The merged hooks (`use`, `derive`, `intercept`, `catchError`).
  */
 export function expandMacros(
   applications: readonly MacroApplication[],

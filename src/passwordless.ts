@@ -12,12 +12,33 @@ export interface OtpRecord {
 
 /** Pluggable storage for pending one-time codes, keyed by identifier. */
 export interface OtpStore {
+  /**
+   * Store (or replace) the pending record for an identifier.
+   *
+   * @param identifier - The account key (e.g. email or phone).
+   * @param record - The hashed code, expiry, and attempt count to persist.
+   */
   set(identifier: string, record: OtpRecord): Promise<void>
+  /**
+   * Load the pending record for an identifier, or `undefined` if none.
+   *
+   * @param identifier - The account key to look up.
+   * @returns The stored record, or `undefined` if none is pending.
+   */
   get(identifier: string): Promise<OtpRecord | undefined>
+  /**
+   * Remove the pending code for an identifier.
+   *
+   * @param identifier - The account key whose pending code to remove.
+   */
   delete(identifier: string): Promise<void>
 }
 
-/** In-memory {@link OtpStore} backed by a `Map`. Fine for one process or tests. */
+/**
+ * In-memory {@link OtpStore} backed by a `Map`. Fine for one process or tests.
+ *
+ * @returns An {@link OtpStore} that keeps records in memory.
+ */
 export function memoryOtpStore(): OtpStore {
   const map = new Map<string, OtpRecord>()
   return {
@@ -88,6 +109,7 @@ export class Passwordless {
   private readonly generate: () => string
   private readonly now: () => number
 
+  /** Create a passwordless issuer/verifier from the given options. */
   constructor(options: PasswordlessOptions = {}) {
     this.store = options.store ?? memoryOtpStore()
     this.ttl = options.ttl ?? 600
@@ -106,7 +128,12 @@ export class Passwordless {
     return code
   }
 
-  /** Issue a fresh code for `identifier` and return it to send out of band. */
+  /**
+   * Issue a fresh code for `identifier` and return it to send out of band.
+   *
+   * @param identifier - The account to issue a code for (e.g. email or phone).
+   * @returns The plaintext code to deliver to the user.
+   */
   async issue(identifier: string): Promise<string> {
     const code = this.generate()
     await this.store.set(identifier, {
@@ -121,6 +148,10 @@ export class Passwordless {
    * Check a submitted `code` for `identifier`. Consumes the code on success;
    * counts the attempt and burns the code once `maxAttempts` is reached, or when
    * it has expired.
+   *
+   * @param identifier - The account the code was issued for.
+   * @param code - The code the user submitted.
+   * @returns `true` if the code matched a live record, else `false`.
    */
   async verify(identifier: string, code: string): Promise<boolean> {
     const record = await this.store.get(identifier)

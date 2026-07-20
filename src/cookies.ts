@@ -72,31 +72,57 @@ export class Cookies {
   private readonly incoming: Map<string, string>
   private readonly outgoing: string[] = []
 
+  /** Build a jar from the incoming request's `Cookie` header (may be `null`). */
   constructor(cookieHeader: string | null) {
     this.incoming = parseCookieHeader(cookieHeader)
   }
 
-  /** The value of an incoming cookie, or `undefined`. */
+  /**
+   * The value of an incoming cookie, or `undefined`.
+   *
+   * @param name - The cookie name to read.
+   * @returns The decoded cookie value, or `undefined` if not present.
+   */
   get(name: string): string | undefined {
     return this.incoming.get(name)
   }
 
-  /** Whether an incoming cookie is present. */
+  /**
+   * Whether an incoming cookie is present.
+   *
+   * @param name - The cookie name to check.
+   * @returns `true` if the request sent a cookie with that name.
+   */
   has(name: string): boolean {
     return this.incoming.has(name)
   }
 
-  /** All incoming cookies as a plain object. */
+  /**
+   * All incoming cookies as a plain object.
+   *
+   * @returns A name→value map of every incoming cookie.
+   */
   all(): Record<string, string> {
     return Object.fromEntries(this.incoming)
   }
 
-  /** Queue a cookie to be set on the response. */
+  /**
+   * Queue a cookie to be set on the response.
+   *
+   * @param name - The cookie name.
+   * @param value - The cookie value (URL-encoded when serialized).
+   * @param options - `Set-Cookie` attributes such as path, expiry, and flags.
+   */
   set(name: string, value: string, options: CookieOptions = {}): void {
     this.outgoing.push(serializeCookie(name, value, options))
   }
 
-  /** Queue a cookie to be cleared (expired) on the response. */
+  /**
+   * Queue a cookie to be cleared (expired) on the response.
+   *
+   * @param name - The cookie name to clear.
+   * @param options - Matching attributes (e.g. `path`, `domain`) so the browser drops the right cookie.
+   */
   delete(
     name: string,
     options: Omit<CookieOptions, 'expires' | 'maxAge'> = {},
@@ -110,7 +136,11 @@ export class Cookies {
     )
   }
 
-  /** The queued `Set-Cookie` header values. */
+  /**
+   * The queued `Set-Cookie` header values.
+   *
+   * @returns The `Set-Cookie` header strings queued by `set`/`delete`.
+   */
   serialize(): readonly string[] {
     return this.outgoing
   }

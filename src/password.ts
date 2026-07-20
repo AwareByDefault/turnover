@@ -61,7 +61,12 @@ export class PasswordHasher {
     return opts
   }
 
-  /** Hash a plaintext password into a self-describing PHC string. */
+  /**
+   * Hash a plaintext password into a self-describing PHC string.
+   *
+   * @param password - The plaintext password to hash.
+   * @returns A promise for the PHC-format hash string.
+   */
   hash(password: string): Promise<string> {
     return Bun.password.hash(password, this.bunOptions())
   }
@@ -69,6 +74,10 @@ export class PasswordHasher {
   /**
    * Check a plaintext password against a stored hash. Returns `false` (never
    * throws) when the hash is malformed or the password does not match.
+   *
+   * @param password - The plaintext password to check.
+   * @param hash - The stored hash to check against.
+   * @returns A promise for `true` if the password matches, otherwise `false`.
    */
   async verify(password: string, hash: string): Promise<boolean> {
     try {
@@ -82,6 +91,9 @@ export class PasswordHasher {
    * Whether `hash` was produced by a different algorithm than the one currently
    * configured — call after a successful `verify` to transparently upgrade a
    * stored hash (e.g. migrating bcrypt → Argon2id) on the user's next login.
+   *
+   * @param hash - The stored hash to inspect.
+   * @returns `true` if `hash` should be re-hashed with the configured algorithm.
    */
   needsRehash(hash: string): boolean {
     const algorithm = this.options.algorithm ?? 'argon2id'

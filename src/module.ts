@@ -37,6 +37,9 @@ export interface ModuleOptions {
  * })
  * class AdminModule {}
  * ```
+ *
+ * @param options - module configuration (prefix, controllers, nested modules, cross-cutting concerns)
+ * @returns a class decorator that records the module's metadata
  */
 export function module(options: ModuleOptions = {}) {
   return (_value: Ctor, context: ClassDecoratorContext): void => {

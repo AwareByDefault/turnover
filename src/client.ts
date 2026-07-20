@@ -55,8 +55,11 @@ type NeedsOptions<Op> = Op extends { parameters: { path: unknown } }
 
 /** The result of a request: `data` on success, `error` on a non-2xx. */
 export interface ClientResult<T> {
+  /** The parsed response body on a 2xx response. */
   data?: T
+  /** The parsed response body on a non-2xx response. */
   error?: unknown
+  /** The raw `Response`. */
   response: Response
 }
 
@@ -69,21 +72,35 @@ type ClientMethod<Paths, M extends string> = <P extends PathsWith<Paths, M>>(
 
 /** A typed client over an `openapi-typescript` `paths` type. */
 export interface Client<Paths> {
+  /** Send a typed `GET` request. */
   get: ClientMethod<Paths, 'get'>
+  /** Send a typed `POST` request. */
   post: ClientMethod<Paths, 'post'>
+  /** Send a typed `PUT` request. */
   put: ClientMethod<Paths, 'put'>
+  /** Send a typed `PATCH` request. */
   patch: ClientMethod<Paths, 'patch'>
+  /** Send a typed `DELETE` request. */
   delete: ClientMethod<Paths, 'delete'>
 }
 
+/** Configuration for {@link createClient}. */
 export interface ClientConfig {
+  /** Base URL prepended to every request path (a trailing slash is trimmed). */
   baseUrl: string
+  /** Default headers merged into every request. */
   headers?: Record<string, string>
   /** Override the fetch implementation (e.g. `app.handle` in tests). */
   fetch?: (request: Request) => Promise<Response>
 }
 
-/** Create a typed client for an API described by an `openapi-typescript` `paths` type. */
+/**
+ * Create a typed client for an API described by an `openapi-typescript` `paths` type.
+ *
+ * @typeParam Paths - the generated `openapi-typescript` `paths` type for the API
+ * @param config - base URL, default headers, and an optional `fetch` override
+ * @returns a {@link Client} with typed `get`/`post`/`put`/`patch`/`delete` methods
+ */
 export function createClient<Paths>(config: ClientConfig): Client<Paths> {
   const base = config.baseUrl.replace(/\/$/, '')
 

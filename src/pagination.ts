@@ -28,6 +28,10 @@ export interface PageOptions {
  *   return paginated(rows, total, p)
  * }
  * ```
+ *
+ * @param query - The request query string to read `page` and `limit` from.
+ * @param options - Default and maximum page size.
+ * @returns Normalized, clamped pagination parameters.
  */
 export function pageParams(
   query: URLSearchParams,
@@ -43,16 +47,27 @@ export function pageParams(
 
 /** A page of results in a standard envelope. */
 export interface Page<T> {
+  /** The items on this page. */
   data: T[]
+  /** 1-based page number. */
   page: number
+  /** Items per page. */
   limit: number
+  /** Total number of items across all pages. */
   total: number
+  /** Total number of pages (`ceil(total / limit)`, at least 1). */
   totalPages: number
 }
 
 /**
  * Wrap a page of `data` (and the overall `total`) in a standard {@link Page}
  * envelope with the page number, limit, total count, and derived page count.
+ *
+ * @typeParam T - The item type carried on the page.
+ * @param data - The items on the current page.
+ * @param total - Total number of items across all pages.
+ * @param params - The pagination parameters this page was fetched with.
+ * @returns The items wrapped in a standard {@link Page} envelope.
  */
 export function paginated<T>(
   data: T[],

@@ -13,10 +13,15 @@ const LEVELS: Record<LogLevel, number> = {
 
 /** A structured log record: level, message, time, request id, and any fields. */
 export interface LogRecord {
+  /** Severity of the record. */
   level: LogLevel
+  /** The log message. */
   msg: string
+  /** ISO-8601 timestamp of when the record was emitted. */
   time: string
+  /** Correlation id of the request that produced it, when inside one. */
   requestId?: string
+  /** Arbitrary structured fields merged into the record. */
   [key: string]: unknown
 }
 
@@ -79,19 +84,39 @@ export class Logger {
     })
   }
 
-  /** Log at `debug` (suppressed unless the level allows it). */
+  /**
+   * Log at `debug` (suppressed unless the level allows it).
+   *
+   * @param msg - The log message.
+   * @param fields - Optional structured fields merged into the record.
+   */
   debug(msg: string, fields?: Record<string, unknown>): void {
     this.write('debug', msg, fields)
   }
-  /** Log at `info`. */
+  /**
+   * Log at `info`.
+   *
+   * @param msg - The log message.
+   * @param fields - Optional structured fields merged into the record.
+   */
   info(msg: string, fields?: Record<string, unknown>): void {
     this.write('info', msg, fields)
   }
-  /** Log at `warn`. */
+  /**
+   * Log at `warn`.
+   *
+   * @param msg - The log message.
+   * @param fields - Optional structured fields merged into the record.
+   */
   warn(msg: string, fields?: Record<string, unknown>): void {
     this.write('warn', msg, fields)
   }
-  /** Log at `error`. */
+  /**
+   * Log at `error`.
+   *
+   * @param msg - The log message.
+   * @param fields - Optional structured fields merged into the record.
+   */
   error(msg: string, fields?: Record<string, unknown>): void {
     this.write('error', msg, fields)
   }

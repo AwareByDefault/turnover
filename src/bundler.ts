@@ -11,7 +11,12 @@ import type { BunPlugin } from 'bun'
 
 const CONTROLLER = /@controller\s*\(/
 
-/** Absolute paths of every `.ts` file under `dir` whose source declares a `@controller`. */
+/**
+ * Absolute paths of every `.ts` file under `dir` whose source declares a `@controller`.
+ *
+ * @param dir - directory to scan recursively for controller files
+ * @returns the matching absolute file paths, sorted
+ */
 export async function scanControllerFiles(dir: string): Promise<string[]> {
   const glob = new Bun.Glob('**/*.ts')
   const files: string[] = []
@@ -53,6 +58,9 @@ export interface TurnoverPluginOptions {
  * each into the entrypoint(s), so they're bundled and self-register — the same
  * set the runtime scan would have found. Your entry keeps calling `createApp()`
  * with no arguments; nothing in the app changes.
+ *
+ * @param options - plugin options (e.g. the `dir` to scan for controllers)
+ * @returns a `Bun.build` plugin that injects discovered controller imports
  */
 export function turnoverPlugin(options: TurnoverPluginOptions = {}): BunPlugin {
   return {

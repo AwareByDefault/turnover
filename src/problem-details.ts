@@ -57,6 +57,8 @@ function problemResponse(problem: ProblemDocument): Response {
  * const app = await createApp({ plugins: [problemDetails()] })
  * // throw new NotFoundError("user 5") → 404 application/problem+json
  * ```
+ *
+ * @returns a plugin whose error handler renders `application/problem+json`
  */
 export function problemDetails(): Plugin {
   const onError: ErrorHandler = (err, ctx) => {

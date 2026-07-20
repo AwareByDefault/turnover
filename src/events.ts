@@ -18,7 +18,14 @@ export type EventListener<E> = (event: E) => unknown
 export class Events {
   private readonly listeners = new Map<EventType, Set<EventListener<object>>>()
 
-  /** Subscribe to an event type. Returns an unsubscribe function. */
+  /**
+   * Subscribe to an event type. Returns an unsubscribe function.
+   *
+   * @typeParam E - The event object type this listener receives.
+   * @param type - The event class to subscribe to.
+   * @param listener - Invoked with each published event of `type`.
+   * @returns A function that removes this subscription when called.
+   */
   on<E extends object>(
     type: EventType<E>,
     listener: EventListener<E>,
@@ -32,7 +39,12 @@ export class Events {
     return () => set?.delete(listener as EventListener<object>)
   }
 
-  /** Publish an event to every subscriber of its class; resolves when all finish. */
+  /**
+   * Publish an event to every subscriber of its class; resolves when all finish.
+   *
+   * @typeParam E - The event object type being published.
+   * @param event - The event instance; its class selects the subscribers.
+   */
   async publish<E extends object>(event: E): Promise<void> {
     const set = this.listeners.get(event.constructor as EventType)
     if (!set || set.size === 0) return
@@ -63,6 +75,10 @@ interface EventListenerMeta {
  *   @onEvent(UserCreated) welcome(e: UserCreated) { ... }
  * }
  * ```
+ *
+ * @typeParam E - The event object type the decorated method handles.
+ * @param type - The event class to subscribe the method to.
+ * @returns A method decorator that records the subscription.
  */
 export function onEvent<E extends object>(type: EventType<E>) {
   return (_value: unknown, context: ClassMethodDecoratorContext): void => {
@@ -77,6 +93,9 @@ export function onEvent<E extends object>(type: EventType<E>) {
 /**
  * A post-processor that subscribes a constructed instance's `@onEvent` methods
  * to the container's `Events` bus. Registered automatically by `createApp`.
+ *
+ * @param container - The container whose `Events` bus receives the subscriptions.
+ * @returns A `PostProcessor` that wires each instance's `@onEvent` methods.
  */
 export function eventListenerProcessor(container: Container): PostProcessor {
   return (instance, token: Ctor) => {

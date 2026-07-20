@@ -19,12 +19,20 @@ export interface JoinPoint {
 
 /** A {@link JoinPoint} that can run the wrapped method via `proceed()`. */
 export interface ProceedingJoinPoint extends JoinPoint {
-  /** Invoke the method (optionally with different args); returns its result. */
+  /**
+   * Invoke the method (optionally with different args); returns its result.
+   *
+   * @param args - Replacement call arguments; defaults to the original arguments when omitted.
+   * @returns The method's result (a `Promise` for async methods).
+   */
   proceed(args?: unknown[]): unknown
 }
 
+/** Advice that runs just before the method body — for sync side effects; its return value is ignored. */
 export type BeforeAdvice = (joinPoint: JoinPoint) => void
+/** Advice that runs after the method finishes (in a `finally`, awaiting async methods); its return value is ignored. */
 export type AfterAdvice = (joinPoint: JoinPoint) => void
+/** Advice that wraps the method: it receives a {@link ProceedingJoinPoint}, must call `proceed()` to run the method, and returns the (possibly transformed) result. */
 export type AroundAdvice = (joinPoint: ProceedingJoinPoint) => unknown
 
 interface AdviceSet {
@@ -54,6 +62,10 @@ function adviceFor(context: ClassMethodDecoratorContext): AdviceSet {
  * Register `around` advice for a named method directly on a metadata bag — the
  * programmatic form of `@around`, for applying advice to many methods at once
  * (e.g. a class-level `@traced()` that wraps every public method).
+ *
+ * @param meta - The class's shared metadata bag to record the advice on.
+ * @param method - Name of the method to wrap.
+ * @param advice - The around advice to run around the method.
  */
 export function addAround(
   meta: MetaBag,
@@ -63,21 +75,36 @@ export function addAround(
   adviceSetFor(meta, method).around.push(advice)
 }
 
-/** Method decorator: run `advice` before the method (sync side effects). */
+/**
+ * Method decorator: run `advice` before the method (sync side effects).
+ *
+ * @param advice - The advice to run before the method body.
+ * @returns A method decorator that records the before advice.
+ */
 export function before(advice: BeforeAdvice) {
   return (_v: unknown, context: ClassMethodDecoratorContext): void => {
     adviceFor(context).before.push(advice)
   }
 }
 
-/** Method decorator: run `advice` after the method (finally; awaits async methods). */
+/**
+ * Method decorator: run `advice` after the method (finally; awaits async methods).
+ *
+ * @param advice - The advice to run after the method finishes.
+ * @returns A method decorator that records the after advice.
+ */
 export function after(advice: AfterAdvice) {
   return (_v: unknown, context: ClassMethodDecoratorContext): void => {
     adviceFor(context).after.push(advice)
   }
 }
 
-/** Method decorator: wrap the method — call `joinPoint.proceed()` to run it. */
+/**
+ * Method decorator: wrap the method — call `joinPoint.proceed()` to run it.
+ *
+ * @param advice - The advice that wraps the method.
+ * @returns A method decorator that records the around advice.
+ */
 export function around(advice: AroundAdvice) {
   return (_v: unknown, context: ClassMethodDecoratorContext): void => {
     adviceFor(context).around.push(advice)

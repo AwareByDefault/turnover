@@ -20,6 +20,9 @@ export interface EtagOptions {
  *
  * The body is buffered to hash it, so pair it with GET endpoints rather than
  * large streaming responses.
+ *
+ * @param options - which request methods receive an ETag (default `GET`)
+ * @returns a plugin that adds weak ETags and answers `304 Not Modified`
  */
 export function etag(options: EtagOptions = {}): Plugin {
   const methods = new Set(

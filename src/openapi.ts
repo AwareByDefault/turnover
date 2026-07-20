@@ -2,35 +2,59 @@ import type { RouteSchemas, StandardSchemaV1 } from './schema'
 
 /** OpenAPI metadata a route can declare (via its decorator options). */
 export interface OperationMeta {
+  /** Short summary of the operation. */
   summary?: string
+  /** Longer description of the operation. */
   description?: string
+  /** Tags used to group the operation. */
   tags?: string[]
+  /** Explicit operation id (a readable one is generated when omitted). */
   operationId?: string
+  /** Mark the operation as deprecated. */
   deprecated?: boolean
 }
 
 /** One mounted route, captured for OpenAPI generation. */
 export interface OperationRecord {
+  /** The HTTP method (e.g. `GET`). */
   method: string
   /** The normalized route pattern, e.g. `/users/:id`. */
   pattern: string
+  /** Standard Schemas declared for the route's inputs and output. */
   schemas?: RouteSchemas
+  /** OpenAPI metadata declared on the route. */
   meta?: OperationMeta
 }
 
+/** The `info` block of the generated OpenAPI document. */
 export interface OpenApiInfo {
+  /**
+   * API title.
+   * @defaultValue `'turnover API'`
+   */
   title?: string
+  /**
+   * API version.
+   * @defaultValue `'0.0.0'`
+   */
   version?: string
+  /** API description. */
   description?: string
 }
 
+/** A server entry advertised in the OpenAPI document. */
 export interface OpenApiServer {
+  /** Base URL of the server. */
   url: string
+  /** Human-readable description of the server. */
   description?: string
 }
 
+/** Options for building an OpenAPI document. */
 export interface OpenApiOptions {
+  /** Document metadata (`title`, `version`, `description`). */
   info?: OpenApiInfo
+  /** Server entries to advertise. */
   servers?: OpenApiServer[]
   /**
    * Convert a route's Standard Schema into a JSON Schema for the document.
@@ -43,9 +67,13 @@ export interface OpenApiOptions {
 
 /** A generated OpenAPI 3.1 document. */
 export interface OpenApiDocument {
+  /** The OpenAPI spec version (`3.1.0`). */
   openapi: string
+  /** Document metadata. */
   info: { title: string; version: string; description?: string }
+  /** Advertised servers, if any. */
   servers?: OpenApiServer[]
+  /** Path items keyed by path, each keyed by lowercased HTTP method. */
   paths: Record<string, Record<string, unknown>>
 }
 
@@ -84,7 +112,13 @@ function defaultOperationId(method: string, path: string): string {
   return method.toLowerCase() + parts.join('')
 }
 
-/** Build an OpenAPI 3.1 document from mounted operations. */
+/**
+ * Build an OpenAPI 3.1 document from mounted operations.
+ *
+ * @param operations - the mounted route records to document
+ * @param options - document info, servers, and a Standard-Schema-to-JSON-Schema converter
+ * @returns the generated {@link OpenApiDocument}
+ */
 export function buildOpenApi(
   operations: readonly OperationRecord[],
   options: OpenApiOptions = {},

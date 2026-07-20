@@ -12,9 +12,28 @@ import {
  * (Redis, a database) can back it; {@link MemoryCache} is the in-process default.
  */
 export interface CacheStore {
+  /**
+   * Return the value stored under `key`, or `undefined` if absent or expired.
+   *
+   * @param key - The cache key to look up.
+   * @returns The stored value, or `undefined` if absent or expired.
+   */
   get(key: string): Promise<unknown>
+  /**
+   * Store `value` under `key`, optionally expiring it after `ttlMs`.
+   *
+   * @param key - The cache key to store under.
+   * @param value - The value to cache.
+   * @param ttlMs - Optional lifetime in milliseconds; omit for no expiry.
+   */
   set(key: string, value: unknown, ttlMs?: number): Promise<void>
+  /**
+   * Remove the entry stored under `key`.
+   *
+   * @param key - The cache key to remove.
+   */
   delete(key: string): Promise<void>
+  /** Remove every entry. */
   clear(): Promise<void>
 }
 
@@ -28,6 +47,12 @@ export class MemoryCache implements CacheStore {
     { value: unknown; expires: number }
   >()
 
+  /**
+   * Return the value stored under `key`, or `undefined` if absent or expired.
+   *
+   * @param key - The cache key to look up.
+   * @returns The stored value, or `undefined` if absent or expired.
+   */
   async get(key: string): Promise<unknown> {
     const entry = this.store.get(key)
     if (!entry) return undefined
@@ -38,14 +63,27 @@ export class MemoryCache implements CacheStore {
     return entry.value
   }
 
+  /**
+   * Store `value` under `key`, optionally expiring it after `ttlMs`.
+   *
+   * @param key - The cache key to store under.
+   * @param value - The value to cache.
+   * @param ttlMs - Optional lifetime in milliseconds; omit for no expiry.
+   */
   async set(key: string, value: unknown, ttlMs?: number): Promise<void> {
     this.store.set(key, { value, expires: ttlMs ? Date.now() + ttlMs : 0 })
   }
 
+  /**
+   * Remove the entry stored under `key`.
+   *
+   * @param key - The cache key to remove.
+   */
   async delete(key: string): Promise<void> {
     this.store.delete(key)
   }
 
+  /** Remove every entry. */
   async clear(): Promise<void> {
     this.store.clear()
   }
@@ -53,6 +91,7 @@ export class MemoryCache implements CacheStore {
 
 const DEFAULT_CACHE = new MemoryCache()
 
+/** Options for the `@cacheable` decorator. */
 export interface CacheableOptions {
   /** Key prefix (default: the method name). */
   key?: string
@@ -77,6 +116,9 @@ function cacheKey(opts: CacheableMeta, args: unknown[]): string {
  * `CacheStore` (default in-memory). Because the store is async, a `@cacheable`
  * method always returns a `Promise` — `await` it even when the underlying body
  * is synchronous.
+ *
+ * @param options - Key prefix, TTL, and key-derivation overrides for the cache entry.
+ * @returns A method decorator that memoizes the method via the bound `CacheStore`.
  */
 export function cacheable(options: CacheableOptions = {}) {
   return (_value: unknown, context: ClassMethodDecoratorContext): void => {
@@ -89,7 +131,12 @@ export function cacheable(options: CacheableOptions = {}) {
   }
 }
 
-/** Method decorator: clear the cache when this method is called. */
+/**
+ * Method decorator: clear the cache when this method is called.
+ *
+ * @param _value - The decorated method (unused).
+ * @param context - The standard method-decorator context, used to record the evict marker.
+ */
 export function cacheEvict(
   _value: unknown,
   context: ClassMethodDecoratorContext,
@@ -103,6 +150,9 @@ export function cacheEvict(
 /**
  * A post-processor that applies `@cacheable` / `@cacheEvict` using the container's
  * `CacheStore`. Registered automatically by `createApp`.
+ *
+ * @param container - The DI container used to resolve the active `CacheStore`.
+ * @returns A post-processor that wraps `@cacheable` / `@cacheEvict` methods.
  */
 export function cacheProcessor(container: Container): PostProcessor {
   return (instance, token: Ctor) => {

@@ -23,6 +23,9 @@ export interface RequestIdOptions {
  * const app = await createApp({ plugins: [requestId()] })
  * // every response carries `x-request-id`; getRequestId() reads it anywhere
  * ```
+ *
+ * @param options - Header name and id generator overrides.
+ * @returns A plugin that assigns and echoes a per-request correlation id.
  */
 export function requestId(options: RequestIdOptions = {}): Plugin {
   const header = options.header ?? 'x-request-id'

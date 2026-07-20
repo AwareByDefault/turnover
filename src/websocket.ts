@@ -28,21 +28,47 @@ export interface WebSocketRoute<Data = unknown> {
    * connection (readable as `ws.data`). Return `undefined` to reject the upgrade
    * with `401`. When omitted, every matching request is accepted with `undefined`
    * data. Runs before the socket opens, so it's the place to authenticate.
+   *
+   * @param req - The incoming upgrade request to inspect (headers, URL, auth).
+   * @returns The data to attach to the connection, or `undefined` to reject with `401`.
    */
   upgrade?(req: Request): Data | undefined | Promise<Data | undefined>
-  /** The connection opened. */
+  /**
+   * The connection opened.
+   *
+   * @param ws - The newly opened connection.
+   * @returns Nothing; may return a promise for async work.
+   */
   open?(ws: WebSocketConnection<Data>): void | Promise<void>
-  /** A message arrived (text as `string`, binary as `Buffer`). */
+  /**
+   * A message arrived (text as `string`, binary as `Buffer`).
+   *
+   * @param ws - The connection the message arrived on.
+   * @param message - The payload: text as `string`, binary as `Buffer`.
+   * @returns Nothing; may return a promise for async work.
+   */
   message?(
     ws: WebSocketConnection<Data>,
     message: string | Buffer,
   ): void | Promise<void>
-  /** The connection closed. */
+  /**
+   * The connection closed.
+   *
+   * @param ws - The connection that closed.
+   * @param code - The WebSocket close code.
+   * @param reason - The close reason text, if any.
+   * @returns Nothing; may return a promise for async work.
+   */
   close?(
     ws: WebSocketConnection<Data>,
     code: number,
     reason: string,
   ): void | Promise<void>
-  /** The socket's send buffer drained (backpressure relieved). */
+  /**
+   * The socket's send buffer drained (backpressure relieved).
+   *
+   * @param ws - The connection whose send buffer drained.
+   * @returns Nothing; may return a promise for async work.
+   */
   drain?(ws: WebSocketConnection<Data>): void | Promise<void>
 }

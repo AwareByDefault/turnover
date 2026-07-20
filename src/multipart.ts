@@ -30,11 +30,19 @@ export class UploadedFile {
     return this.file
   }
 
-  /** Read the whole file as bytes. */
+  /**
+   * Read the whole file as bytes.
+   *
+   * @returns the file's contents as a `Uint8Array`
+   */
   async bytes(): Promise<Uint8Array> {
     return new Uint8Array(await this.file.arrayBuffer())
   }
-  /** Read the whole file as text. */
+  /**
+   * Read the whole file as text.
+   *
+   * @returns the file's contents decoded as a string
+   */
   text(): Promise<string> {
     return this.file.text()
   }
@@ -83,6 +91,9 @@ function typeAllowed(type: string, allowed: string[]): boolean {
  * })
  * // in a handler: const { fields, files } = await ctx.body<MultipartBody>()
  * ```
+ *
+ * @param options - optional count/size/type upload limits
+ * @returns a plugin registering a `multipart/form-data` body parser
  */
 export function multipart(options: MultipartOptions = {}): Plugin {
   const parse = async (req: Request): Promise<MultipartBody> => {

@@ -30,6 +30,9 @@ function normalizePrefix(prefix: string): string {
  * ```ts
  * const app = await createApp({ plugins: [serveStatic({ dir: './public' })] })
  * ```
+ *
+ * @param options - the source `dir`, URL `prefix`, `index` file, and `cacheControl`
+ * @returns a plugin that serves matching files as a pre-routing hook
  */
 export function serveStatic(options: StaticOptions): Plugin {
   const prefix = normalizePrefix(options.prefix ?? '/')

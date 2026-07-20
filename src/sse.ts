@@ -47,6 +47,9 @@ function formatEvent(event: SseEvent): string {
  *   })
  * }
  * ```
+ *
+ * @param source - an async iterable of events, or a function returning one
+ * @returns a streaming `text/event-stream` {@link Response} to return from a handler
  */
 export function sse(
   source: AsyncIterable<SseEvent> | (() => AsyncIterable<SseEvent>),
@@ -98,7 +101,11 @@ export class SseChannel implements AsyncIterable<SseEvent> {
     []
   private closed = false
 
-  /** Enqueue an event (ignored once closed). */
+  /**
+   * Enqueue an event (ignored once closed).
+   *
+   * @param event - the event to enqueue for delivery
+   */
   push(event: SseEvent): void {
     if (this.closed) return
     const waiter = this.waiters.shift()
@@ -116,6 +123,7 @@ export class SseChannel implements AsyncIterable<SseEvent> {
     this.waiters.length = 0
   }
 
+  /** Async-iterate events: drains queued events, then awaits pushes until closed. */
   async *[Symbol.asyncIterator](): AsyncIterator<SseEvent> {
     while (true) {
       const queued = this.queue.shift()

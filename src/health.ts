@@ -46,6 +46,9 @@ export interface HealthOptions {
  * })
  * // GET /health → 200 {status:"up"}; GET /ready → 200/503 with per-check status
  * ```
+ *
+ * @param options - Endpoint paths and any explicit readiness checks.
+ * @returns A plugin serving the liveness and readiness probe endpoints.
  */
 export function health(options: HealthOptions = {}): Plugin {
   const liveness = options.livenessPath ?? '/health'

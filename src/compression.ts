@@ -27,6 +27,9 @@ function isCompressible(contentType: string, extra?: string[]): boolean {
  * ```ts
  * const app = await createApp({ plugins: [compression()] })
  * ```
+ *
+ * @param options - compression threshold and extra compressible content-types
+ * @returns a plugin whose interceptor gzips eligible responses
  */
 export function compression(options: CompressionOptions = {}): Plugin {
   const threshold = options.threshold ?? 1024

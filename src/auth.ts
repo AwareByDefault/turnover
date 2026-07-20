@@ -37,6 +37,7 @@ export class Auth {
     return getRequestState()?.principal ?? null
   }
 
+  /** Whether the current request carries a principal. */
   get isAuthenticated(): boolean {
     return getRequestState()?.principal != null
   }
@@ -83,12 +84,20 @@ function claimGuard(field: 'roles' | 'scopes', allowed: string[]): Guard {
  * @controller('/admin') @requireRole('admin')
  * class Admin { @get('/') list() {} }
  * ```
+ *
+ * @param roles - claim values; the principal must hold at least one on `principal.roles`
+ * @returns a class/method guard decorator that enforces the role check
  */
 export function requireRole(...roles: string[]) {
   return use(claimGuard('roles', roles))
 }
 
-/** Like {@link requireRole}, but checks `principal.scopes`. */
+/**
+ * Like {@link requireRole}, but checks `principal.scopes`.
+ *
+ * @param scopes - claim values; the principal must hold at least one on `principal.scopes`
+ * @returns a class/method guard decorator that enforces the scope check
+ */
 export function requireScope(...scopes: string[]) {
   return use(claimGuard('scopes', scopes))
 }
@@ -102,6 +111,9 @@ export function requireScope(...scopes: string[]) {
  * @del('/:id') @authorize((user, ctx) => user.id === ctx.params.id)
  * remove() {}
  * ```
+ *
+ * @param policy - predicate over the current principal and request context; truthy allows the request
+ * @returns a class/method guard decorator that enforces the policy
  */
 export function authorize(
   policy: (principal: Principal, ctx: Context) => boolean | Promise<boolean>,

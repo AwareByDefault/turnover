@@ -18,6 +18,7 @@ export interface HttpErrorOptions {
 
 /** The JSON body shape produced for an error response. */
 export interface ErrorBody {
+  /** The error envelope carrying the message and any optional `code`/`details`. */
   error: {
     message: string
     code?: string
@@ -31,10 +32,14 @@ export interface ErrorBody {
  * Extend it for domain errors, or throw `new HttpError(status, message)` directly.
  */
 export class HttpError extends Error {
+  /** The HTTP status code sent for this error. */
   readonly status: number
+  /** Optional stable, machine-readable error code. */
   readonly code?: string
+  /** Optional structured data included in the response body. */
   readonly details?: unknown
 
+  /** Create an `HttpError` with an HTTP `status`, optional `message`, and `code`/`details`/`cause`. */
   constructor(
     status: number,
     message?: string,
@@ -48,7 +53,11 @@ export class HttpError extends Error {
     this.details = options.details
   }
 
-  /** Render this error as a JSON `Response` with its status. */
+  /**
+   * Render this error as a JSON `Response` with its status.
+   *
+   * @returns a JSON `Response` carrying this error's status and `{ error }` body
+   */
   toResponse(): Response {
     const error: ErrorBody['error'] = { message: this.message }
     if (this.code !== undefined) error.code = this.code
@@ -91,6 +100,9 @@ export const InternalServerError = httpError(500, 'Internal Server Error')
  * The default rendering for an unhandled thrown value: an `HttpError` (or a
  * subclass) becomes its `toResponse()`, a thrown `Response` passes through, and
  * anything else becomes an opaque `500` (its message is not leaked to the client).
+ *
+ * @param err - the thrown value to render
+ * @returns the corresponding `Response`
  */
 export function toErrorResponse(err: unknown): Response {
   if (err instanceof Response) return err

@@ -61,6 +61,9 @@ function buildHeaders(
  * ```ts
  * const app = await createApp({ plugins: [securityHeaders()] })
  * ```
+ *
+ * @param options - per-header overrides, or `false` to omit a given header
+ * @returns a plugin that sets the baseline security response headers
  */
 export function securityHeaders(options: SecurityHeadersOptions = {}): Plugin {
   const headers = buildHeaders(options)

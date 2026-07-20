@@ -92,18 +92,30 @@ export class Totp {
   private readonly digits: number
   private readonly algorithm: TotpAlgorithm
 
+  /** Create a TOTP helper with the given period, digits, and algorithm. */
   constructor(options: TotpOptions = {}) {
     this.period = options.period ?? 30
     this.digits = options.digits ?? 6
     this.algorithm = options.algorithm ?? 'SHA1'
   }
 
-  /** A fresh random base32 secret (default 20 bytes / 160 bits). */
+  /**
+   * A fresh random base32 secret (default 20 bytes / 160 bits).
+   *
+   * @param bytes - Number of random bytes of entropy (default 20).
+   * @returns The secret, base32-encoded for authenticator apps.
+   */
   generateSecret(bytes = 20): string {
     return base32Encode(randomBytes(bytes))
   }
 
-  /** The code for a base32 `secret` at a given time (default now). */
+  /**
+   * The code for a base32 `secret` at a given time (default now).
+   *
+   * @param secret - The user's base32-encoded shared secret.
+   * @param at - The time to compute the code for (default now).
+   * @returns The current TOTP code, zero-padded to `digits`.
+   */
   code(secret: string, at: Date = nowDate()): string {
     const counter = Math.floor(at.getTime() / 1000 / this.period)
     return hotp(
@@ -117,6 +129,10 @@ export class Totp {
   /**
    * Whether `token` is valid for `secret`, tolerating clock skew of `±window`
    * time steps (default 1, i.e. the adjacent codes). Constant-time comparison.
+   *
+   * @param secret - The user's base32-encoded shared secret.
+   * @param token - The code the user submitted.
+   * @param options - `window` (± steps of skew, default 1) and `at` (time to check against).
    */
   verify(
     secret: string,
@@ -142,7 +158,11 @@ export class Totp {
     return false
   }
 
-  /** An `otpauth://` provisioning URI to render as a QR code for enrolment. */
+  /**
+   * An `otpauth://` provisioning URI to render as a QR code for enrolment.
+   *
+   * @param options - The `secret`, `issuer` (app name), and `account` (user label) to encode.
+   */
   uri(options: { secret: string; issuer: string; account: string }): string {
     const label = encodeURIComponent(`${options.issuer}:${options.account}`)
     const params = new URLSearchParams({

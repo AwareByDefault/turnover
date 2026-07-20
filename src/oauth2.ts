@@ -11,6 +11,7 @@ export type ClientAuthMethod = 'body' | 'basic'
 
 /** Configuration for an {@link OAuth2Client}. */
 export interface OAuth2Config {
+  /** The client identifier registered with the provider. */
   clientId: string
   /** Required for confidential clients; omit for public (PKCE-only) clients. */
   clientSecret?: string
@@ -40,11 +41,17 @@ export interface AuthorizationRequest {
 
 /** A normalized token endpoint response. */
 export interface TokenResponse {
+  /** The access token to call APIs with. */
   accessToken: string
+  /** The token type, typically `"Bearer"`. */
   tokenType: string
+  /** Access-token lifetime in seconds, if the provider returned one. */
   expiresIn?: number
+  /** Refresh token for {@link OAuth2Client.refreshToken}, if issued. */
   refreshToken?: string
+  /** OIDC ID token (a JWT), if the `openid` scope was granted. */
   idToken?: string
+  /** The scopes actually granted, space-delimited, if returned. */
   scope?: string
   /** The raw JSON, for provider-specific fields. */
   raw: Record<string, unknown>
@@ -52,9 +59,12 @@ export interface TokenResponse {
 
 /** Thrown when the token endpoint responds with a non-2xx status. */
 export class OAuth2Error extends Error {
+  /** Construct an error for a failed token or userinfo request. */
   constructor(
     message: string,
+    /** HTTP status returned by the endpoint. */
     readonly status: number,
+    /** Parsed error body (or raw text) from the endpoint, for diagnostics. */
     readonly details: unknown,
   ) {
     super(message)
@@ -108,11 +118,16 @@ function parseTokenResponse(json: Record<string, unknown>): TokenResponse {
 export class OAuth2Client {
   private readonly fetch: FetchLike
 
+  /** Create a client for the given provider configuration. */
   constructor(private readonly config: OAuth2Config) {
     this.fetch = config.fetch ?? ((input, init) => fetch(input, init))
   }
 
-  /** Build an authorization URL with a fresh `state` and PKCE challenge. */
+  /**
+   * Build an authorization URL with a fresh `state` and PKCE challenge.
+   *
+   * @param options - Overrides: `scopes`, a fixed `state`/`codeVerifier`, and extra query `params`.
+   */
   createAuthorizationUrl(
     options: {
       scopes?: string[]
@@ -141,7 +156,11 @@ export class OAuth2Client {
     return { url: url.toString(), state, codeVerifier }
   }
 
-  /** Exchange an authorization `code` (plus its PKCE verifier) for tokens. */
+  /**
+   * Exchange an authorization `code` (plus its PKCE verifier) for tokens.
+   *
+   * @param options - The `code` from the callback, its `codeVerifier`, and an optional `redirectUri` override.
+   */
   exchangeCode(options: {
     code: string
     codeVerifier?: string
@@ -157,7 +176,12 @@ export class OAuth2Client {
     return this.tokenRequest(body)
   }
 
-  /** Exchange a refresh token for a fresh access token. */
+  /**
+   * Exchange a refresh token for a fresh access token.
+   *
+   * @param refreshToken - The refresh token previously issued by the provider.
+   * @returns The refreshed token set.
+   */
   refreshToken(refreshToken: string): Promise<TokenResponse> {
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -167,7 +191,14 @@ export class OAuth2Client {
     return this.tokenRequest(body)
   }
 
-  /** Fetch the OIDC userinfo profile with an access token. */
+  /**
+   * Fetch the OIDC userinfo profile with an access token.
+   *
+   * @typeParam T - The expected shape of the userinfo response.
+   * @param accessToken - A valid access token, sent as a Bearer credential.
+   * @param userInfoEndpoint - The provider's userinfo endpoint URL.
+   * @returns The parsed userinfo profile.
+   */
   async fetchUserInfo<T = Record<string, unknown>>(
     accessToken: string,
     userInfoEndpoint: string,

@@ -3,8 +3,11 @@ export type JobStatus = 'pending' | 'completed' | 'failed'
 
 /** A unit of deferred work. */
 export interface Job<T = unknown> {
+  /** Unique id assigned at enqueue time. */
   readonly id: string
+  /** The registered handler type this job routes to. */
   readonly type: string
+  /** Arbitrary work data handed to the handler. */
   readonly payload: T
   /** How many times the handler has run (including the current attempt). */
   attempts: number
@@ -12,6 +15,7 @@ export interface Job<T = unknown> {
   readonly maxAttempts: number
   /** Epoch ms the job is eligible to run at (for delays and backoff). */
   runAt: number
+  /** Current lifecycle state. */
   status: JobStatus
   /** Message of the last handler error, if any. */
   lastError?: string
@@ -28,13 +32,36 @@ export type JobHandler<T = unknown> = (
  * it; the default is in-memory.
  */
 export interface JobStore {
+  /**
+   * Persist a newly enqueued job.
+   *
+   * @param job - The newly enqueued job to store.
+   */
   add(job: Job): Promise<void>
-  /** Pending jobs eligible at `now`, soonest first. */
+  /**
+   * Pending jobs eligible at `now`, soonest first.
+   *
+   * @param now - Epoch ms cutoff; jobs whose `runAt` is at or before this are due.
+   * @returns The eligible pending jobs, soonest `runAt` first.
+   */
   due(now: number): Promise<Job[]>
+  /**
+   * Persist an updated job.
+   *
+   * @param job - The job whose mutated state should be written back.
+   */
   save(job: Job): Promise<void>
-  /** Dead-lettered jobs (attempts exhausted). */
+  /**
+   * Dead-lettered jobs (attempts exhausted).
+   *
+   * @returns Every job that exhausted its attempts.
+   */
   failed(): Promise<Job[]>
-  /** Count of jobs still pending. */
+  /**
+   * Count of jobs still pending.
+   *
+   * @returns The number of jobs still awaiting processing.
+   */
   pending(): Promise<number>
 }
 
@@ -107,6 +134,7 @@ export class JobQueue {
   private timer: ReturnType<typeof setInterval> | undefined
   private seq = 0
 
+  /** Create a job queue, taking its store, attempt limit, backoff, and clock from `options`. */
   constructor(options: JobQueueOptions = {}) {
     this.store = options.store ?? memoryJobStore()
     this.defaultMaxAttempts = options.maxAttempts ?? 3
@@ -114,13 +142,27 @@ export class JobQueue {
     this.now = options.clock ?? Date.now
   }
 
-  /** Register the handler for a job `type` (one per type; last wins). */
+  /**
+   * Register the handler for a job `type` (one per type; last wins).
+   *
+   * @typeParam T - The payload type this handler expects.
+   * @param type - The job type this handler is registered for.
+   * @param handler - The function invoked with each job's payload of this type.
+   */
   on<T>(type: string, handler: JobHandler<T>): this {
     this.handlers.set(type, handler as JobHandler)
     return this
   }
 
-  /** Enqueue a job and return its id. */
+  /**
+   * Enqueue a job and return its id.
+   *
+   * @typeParam T - The payload type for this job.
+   * @param type - The registered handler type to route this job to.
+   * @param payload - The work data handed to the handler.
+   * @param options - Per-job delay and attempt-limit overrides.
+   * @returns The generated id of the enqueued job.
+   */
   async enqueue<T>(
     type: string,
     payload: T,
@@ -145,6 +187,9 @@ export class JobQueue {
    * Run every job eligible at `now` (default the queue clock) once, in due
    * order, and return how many ran. A handler that throws (or a missing handler)
    * reschedules with backoff, or dead-letters once attempts are spent.
+   *
+   * @param now - Epoch ms cutoff; jobs whose `runAt` is at or before it run (default the queue clock).
+   * @returns How many jobs ran this pass.
    */
   async process(now: number = this.now()): Promise<number> {
     const due = await this.store.due(now)
@@ -170,7 +215,11 @@ export class JobQueue {
     return due.length
   }
 
-  /** Start polling: run {@link JobQueue.process} every `intervalMs` (default 1000). */
+  /**
+   * Start polling: run {@link JobQueue.process} every `intervalMs` (default 1000).
+   *
+   * @param intervalMs - How often to poll for due jobs, in milliseconds.
+   */
   start(intervalMs = 1000): void {
     if (this.timer) return
     this.timer = setInterval(() => {
@@ -186,12 +235,20 @@ export class JobQueue {
     }
   }
 
-  /** Jobs that exhausted their attempts (the dead-letter list). */
+  /**
+   * Jobs that exhausted their attempts (the dead-letter list).
+   *
+   * @returns The dead-lettered jobs.
+   */
   failed(): Promise<Job[]> {
     return this.store.failed()
   }
 
-  /** Number of jobs still pending. */
+  /**
+   * Number of jobs still pending.
+   *
+   * @returns The number of jobs still awaiting processing.
+   */
   pending(): Promise<number> {
     return this.store.pending()
   }

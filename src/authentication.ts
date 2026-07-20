@@ -10,6 +10,12 @@ import { setPrincipal } from './request'
 export interface AuthScheme {
   /** A label for diagnostics. */
   name: string
+  /**
+   * Resolve a principal from the request, or `null` to defer to the next scheme.
+   *
+   * @param ctx - The request context to authenticate.
+   * @returns The resolved principal, or `null` to defer to the next scheme.
+   */
   authenticate(ctx: Context): Principal | null | Promise<Principal | null>
 }
 
@@ -24,6 +30,9 @@ export interface AuthScheme {
  *   plugins: [authentication([bearer({ verify }), apiKey({ verify })])],
  * })
  * ```
+ *
+ * @param schemes - The schemes to try in order; the first to resolve a principal wins.
+ * @returns A plugin that runs the authentication stage on every request.
  */
 export function authentication(schemes: AuthScheme[]): Plugin {
   const wrap: Interceptor = async (ctx, next) => {
@@ -50,6 +59,9 @@ export interface BearerOptions {
 /**
  * Authentication scheme: read `Authorization: Bearer <token>` and verify it.
  * Use it for JWTs, opaque access tokens, or anything carried as a bearer token.
+ *
+ * @param options - Token verification and optional scheme-name override.
+ * @returns An {@link AuthScheme} that authenticates bearer tokens.
  */
 export function bearer(options: BearerOptions): AuthScheme {
   const prefix = `${options.scheme ?? 'Bearer'} `
@@ -74,6 +86,9 @@ export interface ApiKeyOptions {
 /**
  * Authentication scheme: read an API key from a header (default `x-api-key`)
  * and verify it.
+ *
+ * @param options - Key verification and optional header-name override.
+ * @returns An {@link AuthScheme} that authenticates API keys.
  */
 export function apiKey(options: ApiKeyOptions): AuthScheme {
   const header = (options.header ?? 'x-api-key').toLowerCase()

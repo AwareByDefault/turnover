@@ -31,6 +31,9 @@ export interface CsrfOptions {
  * const app = await createApp({ plugins: [csrf()] })
  * // Browser: read the `csrf-token` cookie, send it as `x-csrf-token` on writes.
  * ```
+ *
+ * @param options - cookie/header names, safe methods, and minted-cookie attributes
+ * @returns a plugin enforcing double-submit-cookie CSRF protection
  */
 export function csrf(options: CsrfOptions = {}): Plugin {
   const cookieName = options.cookie ?? 'csrf-token'

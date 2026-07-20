@@ -3,6 +3,13 @@ import type { Context, Interceptor } from './http'
 
 /** A rate-limit counter store: record a hit, report the count + reset time. */
 export interface RateLimitStore {
+  /**
+   * Record a hit for `key` in a `windowMs` window; returns the running count and
+   * milliseconds until the window resets.
+   *
+   * @param key - the bucket key identifying the client
+   * @param windowMs - length of the fixed window, in milliseconds
+   */
   hit(
     key: string,
     windowMs: number,
@@ -11,7 +18,11 @@ export interface RateLimitStore {
     | Promise<{ count: number; resetMs: number }>
 }
 
-/** In-memory fixed-window counter (per key) — the default store. */
+/**
+ * In-memory fixed-window counter (per key) — the default store.
+ *
+ * @returns a {@link RateLimitStore} backed by an in-process map
+ */
 export function memoryRateLimitStore(): RateLimitStore {
   const windows = new Map<string, { count: number; expires: number }>()
   return {
@@ -52,6 +63,9 @@ export interface RateLimitOptions {
  *   plugins: [rateLimit({ limit: 100, windowMs: 60_000 })],
  * })
  * ```
+ *
+ * @param options - the limit, window, bucket `keyBy`, and optional counter `store`
+ * @returns a plugin that enforces the limit with `429` and rate-limit headers
  */
 export function rateLimit(options: RateLimitOptions): Plugin {
   const store = options.store ?? memoryRateLimitStore()

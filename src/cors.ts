@@ -61,6 +61,9 @@ function resolveOrigin(
  *   plugins: [cors({ origin: "https://app.example.com", credentials: true })],
  * });
  * ```
+ *
+ * @param options - CORS configuration (origin, methods, headers, credentials, `maxAge`)
+ * @returns a plugin that answers preflight requests and adds CORS response headers
  */
 export function cors(options: CorsOptions = {}): Plugin {
   const methods = (options.methods ?? DEFAULT_METHODS).join(', ')

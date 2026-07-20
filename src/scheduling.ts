@@ -1,6 +1,7 @@
 import type { PostProcessor } from './di'
 import { type Ctor, ctxMeta, metadataOf, SCHEDULED } from './metadata'
 
+/** Options for the `@scheduled` decorator. */
 export interface ScheduledOptions {
   /** Fixed interval between runs, in milliseconds. */
   interval: number
@@ -21,7 +22,11 @@ export class Scheduler {
   private timers: ReturnType<typeof setInterval>[] = []
   private started = false
 
-  /** Register a task (used by the scheduling post-processor). */
+  /**
+   * Register a task (used by the scheduling post-processor).
+   *
+   * @param task - the interval task to register (and start if already running)
+   */
   add(task: ScheduledTask): void {
     this.tasks.push(task)
     // If already running, start this newly-added task too.
@@ -71,6 +76,9 @@ export class Scheduler {
  *   @scheduled({ interval: 60_000 }) sweep() { ... }
  * }
  * ```
+ *
+ * @param options - the run `interval` in ms and whether to `runOnStart`
+ * @returns a method decorator that registers the task on construction
  */
 export function scheduled(options: ScheduledOptions) {
   return (_value: unknown, context: ClassMethodDecoratorContext): void => {
@@ -86,6 +94,9 @@ export function scheduled(options: ScheduledOptions) {
 /**
  * A post-processor that registers a constructed instance's `@scheduled` methods
  * with the scheduler. Registered automatically by `createApp`.
+ *
+ * @param scheduler - the scheduler to register discovered tasks with
+ * @returns a {@link PostProcessor} that wires each instance's `@scheduled` methods
  */
 export function schedulingProcessor(scheduler: Scheduler): PostProcessor {
   return (instance, token: Ctor) => {

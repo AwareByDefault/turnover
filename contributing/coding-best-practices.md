@@ -105,6 +105,17 @@ stability, portability, and a footprint of zero runtime dependencies.
   for anything non-obvious, a usage example. ⚠️ Never write a literal `*/`
   inside a block comment (e.g. an unescaped glob) — it closes the comment early
   and cascades dozens of parse errors; wrap globs in backticks or reword them.
+- **6.4 — Public-facing docs are information-rich, driven by the signature.**
+  Every symbol the published package exposes — the exports reachable from a
+  `package.json` entry point — and every public member of an exported
+  class/interface (fields, methods, accessors) is documented, and callables
+  document *everything their signature implies*: an `@param` for each parameter, a
+  `@typeParam` for each type parameter, and an `@returns` for a non-`void` return.
+  Mechanically enforced at 100% coverage by the `tsdoc-coverage` lint check
+  (linting §8.1) — which derives the public surface from `package.json` `exports`
+  and reads the emitted `.d.ts` (exactly what consumers see) — and re-verified
+  end-to-end by a build smoke test, so the types shipped to npm always carry
+  complete docs.
 
 ## 7. Module side effects
 

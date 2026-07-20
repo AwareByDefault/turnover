@@ -4,21 +4,40 @@ import { issuePath, type StandardIssue, type StandardSchemaV1 } from './schema'
 
 /** A source of configuration values keyed by string (env vars, a file, an object). */
 export interface ConfigSource {
+  /**
+   * Read the raw string value for `key`, or `undefined` if absent.
+   *
+   * @param key - the configuration key to read.
+   * @returns the raw string value, or `undefined` if absent.
+   */
   get(key: string): string | undefined
   /**
    * All key/value pairs — for consumers that enumerate the whole source, such
    * as {@link configProperties}. Optional; a source that can't enumerate simply
    * won't support `@configProperties` binding.
+   *
+   * @returns an iterable of every `[key, value]` pair in the source.
    */
   entries?(): Iterable<readonly [string, string]>
 }
 
 /** The default source: `Bun.env` / `process.env`. */
 export class EnvConfigSource implements ConfigSource {
+  /**
+   * Read the environment variable named `key`.
+   *
+   * @param key - the environment variable name to read.
+   * @returns the variable's value, or `undefined` if unset.
+   */
   get(key: string): string | undefined {
     return (Bun.env as Record<string, string | undefined>)[key]
   }
 
+  /**
+   * Every defined environment variable as a `[key, value]` pair.
+   *
+   * @returns an iterable of every defined environment variable as a `[key, value]` pair.
+   */
   entries(): Iterable<readonly [string, string]> {
     const env = Bun.env as Record<string, string | undefined>
     return Object.entries(env).filter(
@@ -48,7 +67,13 @@ export class Config {
   /** Profiles active for this app (see `@profile` and `hasProfile`). */
   readonly profiles = injectOptional(ACTIVE_PROFILES, NO_PROFILES)
 
-  /** Read a value, coercing to the fallback's type (string/number/boolean). */
+  /**
+   * Read a value, coercing to the fallback's type (string/number/boolean).
+   *
+   * @param key - the configuration key to read.
+   * @param fallback - value returned when the key is absent; its type drives coercion (string/number/boolean).
+   * @returns the coerced value, or `fallback` (or `undefined` when no fallback is given).
+   */
   get(key: string): string | undefined
   get(key: string, fallback: number): number
   get(key: string, fallback: boolean): boolean
@@ -69,7 +94,12 @@ export class Config {
     return raw
   }
 
-  /** Read a value, throwing if it is missing. */
+  /**
+   * Read a value, throwing if it is missing.
+   *
+   * @param key - the configuration key to read.
+   * @returns the raw string value.
+   */
   require(key: string): string {
     const raw = this.source.get(key)
     if (raw === undefined)
@@ -77,12 +107,22 @@ export class Config {
     return raw
   }
 
-  /** Whether a key is present. */
+  /**
+   * Whether a key is present.
+   *
+   * @param key - the configuration key to check.
+   * @returns `true` if the key is present.
+   */
   has(key: string): boolean {
     return this.source.get(key) !== undefined
   }
 
-  /** Whether a profile is active. */
+  /**
+   * Whether a profile is active.
+   *
+   * @param name - the profile name to check.
+   * @returns `true` if the profile is active.
+   */
   hasProfile(name: string): boolean {
     return this.profiles.includes(name)
   }
@@ -97,6 +137,10 @@ export class Config {
  *   private debug = value("DEBUG", false);   // boolean
  * }
  * ```
+ *
+ * @param key - the configuration key to read.
+ * @param fallback - value returned when the key is absent; its type drives coercion (string/number/boolean).
+ * @returns the coerced value, or `fallback` (or `undefined` when no fallback is given).
  */
 export function value(key: string): string | undefined
 export function value(key: string, fallback: number): number
@@ -112,7 +156,12 @@ export function value(
     : cfg.get(key, fallback as string)
 }
 
-/** Read a required config value in a field initializer (throws if missing). */
+/**
+ * Read a required config value in a field initializer (throws if missing).
+ *
+ * @param key - the configuration key to read.
+ * @returns the raw string value.
+ */
 export function requireValue(key: string): string {
   return inject(Config).require(key)
 }
@@ -124,6 +173,9 @@ export function requireValue(key: string): string {
  * ```ts
  * @profile("dev") @controller("/debug") class DebugController {}
  * ```
+ *
+ * @param names - profile names that enable this class; it mounts if any one is active.
+ * @returns a class decorator that gates mounting on the active profiles.
  */
 export function profile(...names: string[]) {
   return (_value: Ctor, context: ClassDecoratorContext): void => {
@@ -146,6 +198,7 @@ export class ConfigValidationError extends Error {
   /** The Standard Schema issues that caused the failure. */
   readonly issues: ReadonlyArray<StandardIssue>
 
+  /** Build the error from the offending config class name and its schema issues. */
   constructor(configClass: string, issues: ReadonlyArray<StandardIssue>) {
     const detail = issues
       .map((issue) => {
@@ -205,6 +258,10 @@ function isThenable(value: unknown): value is Promise<unknown> {
  * Reads from `Bun.env` by default; a `CONFIG_SOURCE` provider (or
  * `createApp({ config })`) overrides it, as long as the source can `entries()`.
  * The schema must validate synchronously.
+ *
+ * @param schema - the Standard Schema that validates (and coerces) the collected config object.
+ * @param options - binding options; `prefix` filters variables by name prefix and strips it.
+ * @returns a class decorator that replaces the class with a validating subclass.
  */
 export function configProperties(
   schema: StandardSchemaV1,

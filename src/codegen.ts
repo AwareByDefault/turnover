@@ -133,6 +133,10 @@ function pathTemplate(path: string): string {
  * const source = generateClient(app.openapi({ info: { title: 'API', version: '1' } }))
  * await Bun.write('client.ts', source)
  * ```
+ *
+ * @param doc - the OpenAPI document to generate the client from
+ * @param options - generation options (e.g. the generated `clientName`)
+ * @returns TypeScript source for a self-contained typed client module
  */
 export function generateClient(
   doc: OpenApiDocument,
