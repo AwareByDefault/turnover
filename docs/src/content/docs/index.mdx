@@ -1,0 +1,68 @@
+---
+title: Turnover
+description: Decorator-first REST framework for Bun — inject your dependencies, mount controllers, and let them rest.
+template: splash
+hero:
+  tagline: Decorator-first REST framework for Bun — inject your dependencies, mount controllers, and let them rest.
+  image:
+    file: ../../assets/turnover.svg
+  actions:
+    - text: Get started
+      link: /getting-started/quickstart/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/AwareByDefault/turnover
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What is Turnover?
+
+Turnover is a small, Bun-native REST framework built on **standard TC39 decorators**. You
+write `@controller` classes with `@get` / `@post` route methods, pull services in with a
+tiny dependency-injection container, and let `createApp()` discover and mount everything on
+top of `Bun.serve`.
+
+<CardGrid>
+	<Card title="Standard TC39 decorators" icon="star">
+		Uses the standardized decorators built into TypeScript and Bun. No
+		`experimentalDecorators`, no `emitDecoratorMetadata`, no `reflect-metadata` — it works
+		under the default `tsconfig.json`.
+	</Card>
+	<Card title="Dependency injection" icon="puzzle">
+		Mark a class `@injectable()` and pull it in with `inject()`. Singleton, transient, and
+		request scopes; value, class, factory, and alias providers.
+	</Card>
+	<Card title="Auto-discovery" icon="rocket">
+		`createApp()` finds your `@controller` files and mounts them — no registration list to
+		maintain. Or register controllers explicitly when you prefer.
+	</Card>
+	<Card title="Standard-Schema validation" icon="setting">
+		Validate `body`, `query`, `params`, and `response` with any Standard-Schema validator —
+		Zod, Valibot, ArkType, TypeBox — with no validator dependency in the framework itself.
+	</Card>
+	<Card title="Runs anywhere" icon="open-book">
+		Built on the WinterTC common API. `listen()` uses `Bun.serve`; `app.fetch` deploys
+		unchanged to Cloudflare Workers, Deno, and Vercel.
+	</Card>
+	<Card title="Batteries included" icon="document">
+		Guards, interceptors, modules, method advice, events, scheduled tasks, OpenAPI 3.1, a
+		typed client, and one-line OpenTelemetry.
+	</Card>
+</CardGrid>
+
+## Next steps
+
+<CardGrid>
+	<Card title="Install & first request" icon="rocket">
+		Add the package and serve your first route in a couple of minutes — see
+		[Installation](/getting-started/installation/) and the
+		[Quickstart](/getting-started/quickstart/).
+	</Card>
+	<Card title="Build a real API" icon="pencil">
+		Follow [Your first API](/getting-started/your-first-api/) to build a small service with
+		controllers, DI, validation, and error handling.
+	</Card>
+</CardGrid>
