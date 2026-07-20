@@ -5,9 +5,9 @@ import starlightLlmsTxt from 'starlight-llms-txt';
 
 // https://astro.build/config
 export default defineConfig({
-	// TODO: set to the real docs domain once chosen. Used for canonical URLs, the
-	// sitemap, and the absolute links in llms.txt / llms-full.txt.
-	site: 'https://turnover.awarebydefault.com',
+	// Production URL — used for canonical URLs, the sitemap, and the absolute links
+	// in llms.txt / llms-full.txt. Update if a custom domain is attached later.
+	site: 'https://turnover-docs.vercel.app',
 	integrations: [
 		starlight({
 			title: 'Turnover',
